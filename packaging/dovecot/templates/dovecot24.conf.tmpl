@@ -85,14 +85,14 @@ local_name {{ .Hostname }} {
 # webmail IMAP adapter; loopback counts as secured so plaintext auth works.
 service imap-login {
   inet_listener imap {
-    address = 127.0.0.1
+    listen = 127.0.0.1
     port = 143
   }
   inet_listener imaps {
     port = 993
     ssl = yes
   }
-  service_count = 1
+  restart_request_count = 1
   process_min_avail = 0
   process_limit = 4
   client_limit = 8

@@ -179,6 +179,8 @@ func TestRenderDovecot24(t *testing.T) {
 		"ssl_server_key_file = " + keyPath,
 		"local_name mail.example.com {",
 		"auth_allow_cleartext = no",
+		"listen = 127.0.0.1",
+		"restart_request_count = 1",
 		// Quota enforcement, consistent with the 2.3 template.
 		"mail_plugins {",
 		"quota = yes",
@@ -197,6 +199,8 @@ func TestRenderDovecot24(t *testing.T) {
 		"ssl_key = <",
 		"disable_plaintext_auth",
 		"plugin {",
+		"address = 127.0.0.1",
+		"service_count =",
 	} {
 		if strings.Contains(conf, bad) {
 			t.Errorf("dovecot.conf (2.4): still contains 2.3 syntax %q", bad)
