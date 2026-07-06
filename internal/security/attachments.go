@@ -17,7 +17,16 @@ var dangerousExtensions = map[string]bool{
 	".app": true, ".dmg": true, ".sh": false, // .sh allowed: common between developers
 }
 
-const MaxAttachmentSize = 25 << 20 // 25 MiB per attachment
+const (
+	MaxAttachmentSize      = 25 << 20 // per attachment
+	MaxOutgoingMessageSize = 40 << 20 // whole webmail submission / generated MIME
+	MaxIncomingMessageSize = 40 << 20 // whole message opened by webmail
+	MaxInlinePartSize      = 1 << 20  // decoded text/inline preview part
+
+	MaxAttachmentSizeMB      = MaxAttachmentSize / (1 << 20)
+	MaxOutgoingMessageSizeMB = MaxOutgoingMessageSize / (1 << 20)
+	MaxIncomingMessageSizeMB = MaxIncomingMessageSize / (1 << 20)
+)
 
 // CheckOutgoingAttachment validates an attachment before sending.
 func CheckOutgoingAttachment(filename string, size int64) error {
@@ -26,7 +35,7 @@ func CheckOutgoingAttachment(filename string, size int64) error {
 		return fmt.Errorf("attachments of type %s cannot be sent", ext)
 	}
 	if size > MaxAttachmentSize {
-		return fmt.Errorf("attachment %s exceeds the 25 MB limit", filename)
+		return fmt.Errorf("attachment %s exceeds the %d MB limit", filename, MaxAttachmentSizeMB)
 	}
 	if size == 0 {
 		return fmt.Errorf("attachment %s is empty", filename)

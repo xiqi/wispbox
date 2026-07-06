@@ -11,6 +11,7 @@ import (
 	goimap "github.com/emersion/go-imap/v2/imapclient"
 
 	"github.com/xiqi/wispbox/internal/auth"
+	"github.com/xiqi/wispbox/internal/security"
 )
 
 // Dovecot talks to the local Dovecot IMAP listener (loopback, plaintext —
@@ -221,9 +222,23 @@ func convertIMAPAddrs(addrs []imap.Address) []Address {
 // fetchRaw downloads the full raw message for uid.
 func (d *Dovecot) fetchRaw(c *goimap.Client, uid uint32) ([]byte, []imap.Flag, error) {
 	uidSet := imap.UIDSetNum(imap.UID(uid))
+	meta, err := c.Fetch(uidSet, &imap.FetchOptions{
+		UID: true, Flags: true, RFC822Size: true,
+	}).Collect()
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetch message metadata: %w", err)
+	}
+	if len(meta) == 0 {
+		return nil, nil, fmt.Errorf("message not found")
+	}
+	flags := meta[0].Flags
+	if meta[0].RFC822Size > security.MaxIncomingMessageSize {
+		return nil, flags, fmt.Errorf("message is too large to open in webmail (%d MB limit)", security.MaxIncomingMessageSizeMB)
+	}
+
 	section := &imap.FetchItemBodySection{Peek: true}
 	msgs, err := c.Fetch(uidSet, &imap.FetchOptions{
-		UID: true, Flags: true, BodySection: []*imap.FetchItemBodySection{section},
+		UID: true, BodySection: []*imap.FetchItemBodySection{section},
 	}).Collect()
 	if err != nil {
 		return nil, nil, fmt.Errorf("fetch message: %w", err)
@@ -235,7 +250,7 @@ func (d *Dovecot) fetchRaw(c *goimap.Client, uid uint32) ([]byte, []imap.Flag, e
 	if raw == nil {
 		return nil, nil, fmt.Errorf("message body unavailable")
 	}
-	return raw, msgs[0].Flags, nil
+	return raw, flags, nil
 }
 
 func (d *Dovecot) Get(ctx context.Context, creds auth.Credentials, folder string, uid uint32) (*Message, error) {

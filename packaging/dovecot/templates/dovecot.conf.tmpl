@@ -73,7 +73,13 @@ service imap-login {
     ssl = yes
   }
   service_count = 1
-  process_min_avail = 1
+  process_min_avail = 0
+  process_limit = 4
+  client_limit = 8
+}
+
+service imap {
+  process_limit = 8
 }
 
 # LMTP receives local deliveries from Postfix.
@@ -83,6 +89,7 @@ service lmtp {
     group = postfix
     mode = 0600
   }
+  process_limit = 4
 }
 
 # SASL for Postfix submission auth.
@@ -92,6 +99,7 @@ service auth {
     group = postfix
     mode = 0660
   }
+  client_limit = 32
 }
 
 # The SQL passdb/userdb run in auth workers. They read (and, because of
@@ -99,13 +107,14 @@ service auth {
 # database, so they run as the wispbox user.
 service auth-worker {
   user = {{ .MailUser }}
+  process_limit = 2
 }
 
 # --- Quota (enforced at LMTP delivery and reported over IMAP) -------------
 mail_plugins = $mail_plugins quota
 protocol imap {
   mail_plugins = $mail_plugins imap_quota
-  mail_max_userip_connections = 20
+  mail_max_userip_connections = 8
 }
 protocol lmtp {
   mail_plugins = $mail_plugins quota
@@ -116,8 +125,9 @@ plugin {
 }
 
 # --- Small-server tuning ----------------------------------------------------
-default_process_limit = 50
-default_vsz_limit = 128M
+default_process_limit = 20
+default_client_limit = 64
+default_vsz_limit = 96M
 
 log_path = syslog
 syslog_facility = mail

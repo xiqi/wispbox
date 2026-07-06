@@ -9,6 +9,7 @@ import (
 	"github.com/emersion/go-message/mail"
 
 	_ "github.com/emersion/go-message/charset" // register legacy charsets
+	"github.com/xiqi/wispbox/internal/security"
 )
 
 // ParseMessage extracts bodies and attachment metadata from a raw RFC 5322
@@ -46,7 +47,10 @@ func ParseMessage(raw []byte) (*Message, error) {
 		switch ph := part.Header.(type) {
 		case *mail.InlineHeader:
 			ct, _, _ := ph.ContentType()
-			body, _ := io.ReadAll(io.LimitReader(part.Body, 4<<20))
+			body, _ := io.ReadAll(io.LimitReader(part.Body, security.MaxInlinePartSize+1))
+			if int64(len(body)) > security.MaxInlinePartSize {
+				body = body[:security.MaxInlinePartSize]
+			}
 			switch {
 			case strings.HasPrefix(ct, "text/plain") && msg.TextBody == "":
 				msg.TextBody = string(body)

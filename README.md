@@ -56,6 +56,12 @@ The installer sets up Postfix, Dovecot, OpenDKIM, `wispboxd`, `wispboxctl`,
 systemd, directories, permissions, and the SQLite control database. Re-running
 it upgrades binaries and keeps your data.
 
+By default the installer applies low-memory systemd limits for the mail stack
+and disables `fwupd-refresh` on dedicated small VPS hosts. That firmware
+metadata job can spike memory hard and is not useful inside most mail VMs. Set
+`WISPBOX_LOW_MEMORY=0` before running the installer if you want to keep the
+host untouched.
+
 ## First Run
 
 Open:

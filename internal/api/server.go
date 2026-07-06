@@ -102,12 +102,20 @@ func (a *App) Serve(ctx context.Context) error {
 		Addr:              a.Cfg.HTTPAddr,
 		Handler:           a.httpHandler(handler),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       20 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    32 << 10,
 	}
 	httpsSrv := &http.Server{
 		Addr:              a.Cfg.HTTPSAddr,
 		Handler:           handler,
 		TLSConfig:         a.CertManager.TLSConfig(),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       20 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    32 << 10,
 	}
 
 	errCh := make(chan error, 2)

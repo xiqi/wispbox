@@ -30,6 +30,7 @@ WISPBOX_VERSION="${WISPBOX_VERSION:-}"
 WISPBOX_TAG=""
 WISPBOX_DOWNLOAD_BASE="${WISPBOX_DOWNLOAD_BASE:-https://github.com/$WISPBOX_REPO/releases/download}"
 WISPBOX_SKIP_VERIFY="${WISPBOX_SKIP_VERIFY:-0}"
+WISPBOX_LOW_MEMORY="${WISPBOX_LOW_MEMORY:-1}"
 INSTALLABLE_RELEASE_HINT="Please try again later, or set WISPBOX_VERSION to another available version."
 # ----------------------------------------------------------------------
 
@@ -294,6 +295,43 @@ install_systemd_unit() {
     systemctl daemon-reload
 }
 
+tune_low_memory_host() {
+    [ "$WISPBOX_LOW_MEMORY" = 1 ] || {
+        warn "WISPBOX_LOW_MEMORY=$WISPBOX_LOW_MEMORY — skipping service memory caps and host low-memory tuning"
+        return 0
+    }
+
+    say "applying low-memory service limits"
+    write_service_limit postfix.service 96M 128M 80
+    write_service_limit postfix@.service 96M 128M 80
+    write_service_limit dovecot.service 96M 128M 80
+    write_service_limit opendkim.service 32M 48M 16
+
+    # fwupd-refresh can briefly allocate hundreds of MiB while refreshing
+    # metadata. It is useful on laptops and hardware hosts, but a dedicated
+    # small mail VPS usually has no firmware to update from inside the guest.
+    if systemctl list-unit-files 2>/dev/null | awk '{print $1}' | grep -Eq '^fwupd(-refresh)?\.(service|timer)$'; then
+        say "disabling fwupd refresh timers on this low-memory mail host"
+        systemctl disable --now fwupd-refresh.timer fwupd-refresh.service fwupd.service >/dev/null 2>&1 || true
+        systemctl mask fwupd-refresh.timer fwupd-refresh.service >/dev/null 2>&1 || true
+    fi
+
+    systemctl daemon-reload
+}
+
+write_service_limit() {
+    unit=$1 high=$2 max=$3 tasks=$4
+    dir="/etc/systemd/system/$unit.d"
+    install -d -m 755 "$dir"
+    cat > "$dir/wispbox-lowmem.conf" <<EOF
+[Service]
+MemoryAccounting=true
+MemoryHigh=$high
+MemoryMax=$max
+TasksMax=$tasks
+EOF
+}
+
 start_services() {
     say "starting services"
     # wispboxd goes first: on boot it creates the fallback TLS certificate that
@@ -367,6 +405,7 @@ main() {
     install_upgrade_helper
     install_sudoers
     install_systemd_unit
+    tune_low_memory_host
     start_services
     check_network_ports
     print_done

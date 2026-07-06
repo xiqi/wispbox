@@ -19,9 +19,11 @@ message_size_limit = {{ .MessageSizeLimit }}
 mailbox_size_limit = 0
 
 # --- Small-server resource limits (512MB friendly) -------------------
-default_process_limit = 30
-smtpd_client_connection_count_limit = 10
-qmgr_message_active_limit = 1000
+default_process_limit = 12
+smtpd_client_connection_count_limit = 5
+qmgr_message_active_limit = 200
+default_destination_concurrency_limit = 5
+smtp_destination_concurrency_limit = 5
 
 # --- Virtual domains, mailboxes, aliases ------------------------------
 virtual_mailbox_domains = texthash:{{ .PostfixMapDir }}/virtual_domains

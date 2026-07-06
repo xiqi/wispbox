@@ -106,7 +106,7 @@ func (b *Builder) Build(ctx context.Context) (*Data, error) {
 		DBPath:               b.Cfg.DBPath,
 		MailUser:             b.MailUser,
 		MailGroup:            b.MailGroup,
-		MessageSizeLimit:     50 * 1024 * 1024,
+		MessageSizeLimit:     security.MaxOutgoingMessageSize,
 		DefaultCertPath:      filepath.Join(b.Cfg.CertDir, "_default", "fullchain.pem"),
 		DefaultKeyPath:       filepath.Join(b.Cfg.CertDir, "_default", "privkey.pem"),
 		DovecotV24:           b.DovecotV24,

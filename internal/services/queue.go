@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -40,22 +41,59 @@ type PostfixQueue struct{}
 
 func NewPostfixQueue() *PostfixQueue { return &PostfixQueue{} }
 
+const maxQueueListItems = 200
+
 func (q *PostfixQueue) List(ctx context.Context) ([]QueueItem, error) {
+	scan, err := q.scan(ctx, maxQueueListItems)
+	return scan.Items, err
+}
+
+func (q *PostfixQueue) Count(ctx context.Context) (int, error) {
+	scan, err := q.scan(ctx, 0)
+	return scan.Count, err
+}
+
+func (q *PostfixQueue) scan(ctx context.Context, keep int) (queueScan, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "postqueue", "-j").Output()
+	cmd := exec.CommandContext(ctx, "postqueue", "-j")
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		// An empty queue exits 0 with no output; a real error surfaces here.
-		return nil, fmt.Errorf("postqueue -j: %w", err)
+		return queueScan{}, fmt.Errorf("postqueue -j: %w", err)
 	}
-	return parsePostqueueJSON(out)
+	if err := cmd.Start(); err != nil {
+		return queueScan{}, fmt.Errorf("postqueue -j: %w", err)
+	}
+	scan, scanErr := scanPostqueueJSON(stdout, keep)
+	waitErr := cmd.Wait()
+	if waitErr != nil {
+		// An empty queue exits 0 with no output; a real error surfaces here.
+		return queueScan{}, fmt.Errorf("postqueue -j: %w", waitErr)
+	}
+	if scanErr != nil {
+		return queueScan{}, scanErr
+	}
+	return scan, nil
+}
+
+type queueScan struct {
+	Items []QueueItem
+	Count int
 }
 
 // parsePostqueueJSON parses `postqueue -j` output (one JSON object per line).
 func parsePostqueueJSON(out []byte) ([]QueueItem, error) {
-	var items []QueueItem
-	sc := bufio.NewScanner(bytes.NewReader(out))
-	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
+	scan, err := scanPostqueueJSON(bytes.NewReader(out), -1)
+	if err != nil {
+		return nil, err
+	}
+	return scan.Items, nil
+}
+
+func scanPostqueueJSON(r io.Reader, keep int) (queueScan, error) {
+	var out queueScan
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 64*1024), 256*1024)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" {
@@ -75,6 +113,7 @@ func parsePostqueueJSON(out []byte) ([]QueueItem, error) {
 		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue // tolerate partial lines rather than failing the whole view
 		}
+		out.Count++
 		item := QueueItem{
 			QueueID:   raw.QueueID,
 			Sender:    raw.Sender,
@@ -88,14 +127,11 @@ func parsePostqueueJSON(out []byte) ([]QueueItem, error) {
 				item.Reason = r.DelayReason
 			}
 		}
-		items = append(items, item)
+		if keep < 0 || len(out.Items) < keep {
+			out.Items = append(out.Items, item)
+		}
 	}
-	return items, sc.Err()
-}
-
-func (q *PostfixQueue) Count(ctx context.Context) (int, error) {
-	items, err := q.List(ctx)
-	return len(items), err
+	return out, sc.Err()
 }
 
 func (q *PostfixQueue) Flush(ctx context.Context) error {

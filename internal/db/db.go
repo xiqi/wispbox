@@ -24,10 +24,10 @@ func Open(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite db: %w", err)
 	}
-	// SQLite handles one writer at a time; a small pool avoids lock churn
-	// and keeps memory flat on 512MB hosts.
-	sqldb.SetMaxOpenConns(4)
-	sqldb.SetMaxIdleConns(4)
+	// SQLite handles one writer at a time. A single connection keeps the
+	// modernc driver footprint small on tiny VPS hosts.
+	sqldb.SetMaxOpenConns(1)
+	sqldb.SetMaxIdleConns(1)
 	sqldb.SetConnMaxLifetime(0)
 	if err := sqldb.Ping(); err != nil {
 		sqldb.Close()

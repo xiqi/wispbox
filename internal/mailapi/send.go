@@ -12,8 +12,6 @@ import (
 	"github.com/xiqi/wispbox/internal/security"
 )
 
-const maxSendBytes = 30 << 20 // whole submission incl. attachments
-
 var (
 	reScriptBlock = regexp.MustCompile(`(?is)<script[^>]*>.*?</\s*script\s*>`)
 	reStyleBlock  = regexp.MustCompile(`(?is)<style[^>]*>.*?</\s*style\s*>`)
@@ -56,9 +54,10 @@ func (h *Handlers) parseSendRequest(w http.ResponseWriter, r *http.Request) (*se
 	ct := r.Header.Get("Content-Type")
 	req := &sendRequest{}
 	if strings.HasPrefix(ct, "multipart/form-data") {
-		r.Body = http.MaxBytesReader(w, r.Body, maxSendBytes)
-		if err := r.ParseMultipartForm(4 << 20); err != nil {
-			return nil, fmt.Errorf("upload too large or malformed (max 25 MB per attachment)")
+		r.Body = http.MaxBytesReader(w, r.Body, security.MaxOutgoingMessageSize)
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			return nil, fmt.Errorf("upload too large or malformed (max %d MB per message, %d MB per attachment)",
+				security.MaxOutgoingMessageSizeMB, security.MaxAttachmentSizeMB)
 		}
 		req.From = r.FormValue("from")
 		req.To = r.FormValue("to")
@@ -83,7 +82,7 @@ func (h *Handlers) parseSendRequest(w http.ResponseWriter, r *http.Request) (*se
 					return nil, err
 				}
 				if int64(len(data)) > security.MaxAttachmentSize {
-					return nil, fmt.Errorf("attachment %s exceeds the 25 MB limit", fh.Filename)
+					return nil, fmt.Errorf("attachment %s exceeds the %d MB limit", fh.Filename, security.MaxAttachmentSizeMB)
 				}
 				req.Atts = append(req.Atts, OutgoingAttachment{
 					Filename:    fh.Filename,
@@ -168,6 +167,11 @@ func (h *Handlers) deliver(w http.ResponseWriter, r *http.Request, mc *mailCtx, 
 	raw, err := BuildMIME(out)
 	if err != nil {
 		httpjson.Error(w, http.StatusInternalServerError, fmt.Errorf("could not build the message: %w", err))
+		return
+	}
+	if int64(len(raw)) > security.MaxOutgoingMessageSize {
+		httpjson.Error(w, http.StatusBadRequest,
+			fmt.Errorf("message exceeds the %d MB limit", security.MaxOutgoingMessageSizeMB))
 		return
 	}
 	if err := h.SMTP.Send(r.Context(), mc.Creds, from, out.AllRecipients(), raw); err != nil {

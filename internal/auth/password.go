@@ -19,11 +19,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Argon2id parameters follow OWASP guidance while staying friendly to
-// 512MB hosts (19 MiB per hash, single lane).
+// Argon2id parameters keep admin login spikes small on tiny VPS hosts.
 const (
 	argonTime    = 2
-	argonMemory  = 19456 // KiB
+	argonMemory  = 8192 // KiB
 	argonThreads = 1
 	argonKeyLen  = 32
 	argonSaltLen = 16

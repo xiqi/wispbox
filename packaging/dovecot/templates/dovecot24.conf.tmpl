@@ -90,7 +90,13 @@ service imap-login {
     ssl = yes
   }
   service_count = 1
-  process_min_avail = 1
+  process_min_avail = 0
+  process_limit = 4
+  client_limit = 8
+}
+
+service imap {
+  process_limit = 8
 }
 
 # LMTP receives local deliveries from Postfix.
@@ -100,6 +106,7 @@ service lmtp {
     group = postfix
     mode = 0600
   }
+  process_limit = 4
 }
 
 # SASL for Postfix submission auth.
@@ -109,17 +116,20 @@ service auth {
     group = postfix
     mode = 0660
   }
+  client_limit = 32
 }
 
 # SQL auth runs in auth workers, which read the Wispbox control database
 # (SQLite WAL journals write next to it), so they run as the wispbox user.
 service auth-worker {
   user = {{ .MailUser }}
+  process_limit = 2
 }
 
 # --- Small-server tuning ----------------------------------------------------
-default_process_limit = 50
-default_vsz_limit = 128M
+default_process_limit = 20
+default_client_limit = 64
+default_vsz_limit = 96M
 
 log_path = syslog
 syslog_facility = mail
