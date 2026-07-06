@@ -124,6 +124,8 @@ func TestRenderMasterCFRequiredZeroProcessLimits(t *testing.T) {
 	master := string(files["master.cf"])
 
 	for _, want := range []string{
+		"smtp      inet  n       -       y       -       8       smtpd",
+		"submission inet n       -       y       -       6       smtpd",
 		"cleanup   unix  n       -       y       -       0       cleanup",
 		"flush     unix  n       -       y       1000?   0       flush",
 	} {
