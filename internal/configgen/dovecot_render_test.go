@@ -160,6 +160,16 @@ func TestRenderDovecot24(t *testing.T) {
 	}
 	conf := string(files["dovecot.conf"])
 	sqlConf := string(files["dovecot-sql.conf.ext"])
+	confLines := strings.Split(strings.TrimSpace(conf), "\n")
+	if len(confLines) < 2 {
+		t.Fatalf("dovecot.conf (2.4): too short")
+	}
+	if got := confLines[0]; got != "dovecot_config_version = 2.4.0" {
+		t.Fatalf("dovecot.conf (2.4): first setting = %q, want dovecot_config_version", got)
+	}
+	if got := confLines[1]; got != "dovecot_storage_version = 2.4.0" {
+		t.Fatalf("dovecot.conf (2.4): second setting = %q, want dovecot_storage_version", got)
+	}
 
 	// 2.4 directives that must be present.
 	for _, w := range []string{

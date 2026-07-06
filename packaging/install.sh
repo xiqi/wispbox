@@ -223,13 +223,11 @@ wire_mail_stack() {
     newaliases 2>/dev/null || true
 
     say "pointing Dovecot at the generated configuration"
-    if [ -f /etc/dovecot/dovecot.conf ] && ! grep -q wispbox /etc/dovecot/dovecot.conf 2>/dev/null; then
+    if [ -f /etc/dovecot/dovecot.conf ] && [ ! -L /etc/dovecot/dovecot.conf ] \
+        && ! grep -q wispbox /etc/dovecot/dovecot.conf 2>/dev/null; then
         cp -a /etc/dovecot/dovecot.conf /etc/dovecot/dovecot.conf.pre-wispbox
     fi
-    cat > /etc/dovecot/dovecot.conf <<EOF
-# Managed by wispbox — do not edit. Original saved as dovecot.conf.pre-wispbox
-!include $GEN_DIR/dovecot/dovecot.conf
-EOF
+    ln -sf $GEN_DIR/dovecot/dovecot.conf /etc/dovecot/dovecot.conf
 
     # Safety net: wispboxd picks 2.3 vs 2.4 templates by the installed Dovecot
     # version, but the exact config is only truly validated by Dovecot itself.
