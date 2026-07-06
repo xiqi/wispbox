@@ -1,0 +1,16 @@
+[Unit]
+Description=wispbox one-click upgrade
+Documentation=https://github.com/xiqi/wispbox
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/wispbox/upgrade.sh
+Nice=5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+# The helper must update /usr/local/bin and restart wispboxd, so it runs as
+# root. Keep the surface narrow: a fixed root-owned script, no shell args.
+PrivateTmp=true

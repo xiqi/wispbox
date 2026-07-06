@@ -1,0 +1,63 @@
+# Release pipeline: pushing a v* tag builds the cross-compiled binaries,
+# generates SHA256SUMS (which packaging/install.sh verifies against), and
+# publishes everything as a GitHub Release.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# The install script's download base points at:
+#   https://github.com/xiqi/wispbox/releases/download
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the release and upload assets
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # The frontend is a build artifact, not committed, but wispboxd embeds
+      # it via //go:embed all:dist — so it must exist before any Go compile.
+      - name: Build frontend
+        run: make frontend
+
+      # A release never ships from a red tree.
+      - name: Vet and test
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: Build release artifacts
+        run: make release VERSION="${GITHUB_REF_NAME#v}"
+
+      # SHA256SUMS covers every asset; install.sh refuses unverified
+      # downloads unless the user explicitly opts out.
+      - name: Generate checksums
+        working-directory: dist
+        run: |
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "Wispbox $GITHUB_REF_NAME" \
+            --generate-notes

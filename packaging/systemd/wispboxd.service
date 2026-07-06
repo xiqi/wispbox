@@ -1,0 +1,39 @@
+[Unit]
+Description=wispbox mail server daemon
+Documentation=https://github.com/xiqi/wispbox
+After=network-online.target postfix.service dovecot.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wispbox
+Group=wispbox
+ExecStart=/usr/local/bin/wispboxd serve --config /etc/wispbox/wispbox.conf
+Restart=on-failure
+RestartSec=3
+
+# wispboxd binds 80 and 443 as an unprivileged user.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+# Paths wispboxd may write: its config/generated dir, state, and logs.
+# ProtectSystem=full keeps the rest of /etc and /usr read-only.
+ReadWritePaths=/etc/wispbox /var/lib/wispbox /var/log/wispbox
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+# Deliberately NOT enabled: NoNewPrivileges, and every sandbox option that
+# implies it. wispboxd reloads Postfix/Dovecot through a narrow sudoers
+# allowlist (/etc/sudoers.d/wispbox), which needs privilege transitions.
+# NOTE: RestrictAddressFamilies=, SystemCallFilter=, ProtectKernel*=,
+# MemoryDenyWriteExecute=, and RestrictNamespaces= are intentionally absent —
+# with User= set, systemd force-enables no_new_privs whenever any of them is
+# present (the filter is installed after the uid drop, when CAP_SYS_ADMIN is
+# gone), which would make every `sudo -n` call fail and mail delivery stall.
+
+# Keep memory in check on 512MB hosts: soft ceiling under the product target.
+MemoryHigh=384M
+MemoryMax=480M
+
+[Install]
+WantedBy=multi-user.target

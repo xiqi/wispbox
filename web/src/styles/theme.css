@@ -1,0 +1,256 @@
+@import "tailwindcss";
+@import "@fontsource-variable/instrument-sans";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* ------------------------------------------------------------------ *
+ * wispbox design system — "will-o'-the-wisp"
+ * Deep ink canvas, pale phosphorescent mint glow, quiet precision.
+ * Dark is the native theme; light is a faithful translation.
+ * ------------------------------------------------------------------ */
+
+:root {
+  /* canvas */
+  --bg: #0b0e13;
+  --bg-deep: #07090d;
+  --raised: #10141c;
+  --inset: #0d1017;
+  --overlay: #151a24;
+
+  /* lines */
+  --line: rgba(148, 163, 184, 0.12);
+  --line-strong: rgba(148, 163, 184, 0.24);
+
+  /* ink */
+  --text: #e6eaf2;
+  --muted: #8b94a7;
+  --faint: #5b6474;
+
+  /* the wisp */
+  --accent: #6ee7b7;
+  --accent-strong: #34d399;
+  --accent-ink: #052e1e;
+  --accent-dim: rgba(110, 231, 183, 0.12);
+  --glow: rgba(110, 231, 183, 0.35);
+
+  /* signals */
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --danger-dim: rgba(248, 113, 113, 0.12);
+  --info: #7dd3fc;
+
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 2px 8px rgba(0, 0, 0, 0.5), 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="light"] {
+  --bg: #f7f8fa;
+  --bg-deep: #eef0f4;
+  --raised: #ffffff;
+  --inset: #f1f3f6;
+  --overlay: #ffffff;
+
+  --line: rgba(15, 23, 42, 0.1);
+  --line-strong: rgba(15, 23, 42, 0.2);
+
+  --text: #171c26;
+  --muted: #5a6372;
+  --faint: #98a1b0;
+
+  --accent: #0d9668;
+  --accent-strong: #0a7d57;
+  --accent-ink: #ffffff;
+  --accent-dim: rgba(13, 150, 104, 0.1);
+  --glow: rgba(13, 150, 104, 0.18);
+
+  --ok: #16a34a;
+  --warn: #d97706;
+  --danger: #dc2626;
+  --danger-dim: rgba(220, 38, 38, 0.08);
+  --info: #0284c7;
+
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.07);
+  --shadow-pop: 0 2px 8px rgba(15, 23, 42, 0.1), 0 16px 48px rgba(15, 23, 42, 0.14);
+}
+
+@theme inline {
+  --font-sans: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", monospace;
+
+  --color-bg: var(--bg);
+  --color-bg-deep: var(--bg-deep);
+  --color-raised: var(--raised);
+  --color-inset: var(--inset);
+  --color-overlay: var(--overlay);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-dim: var(--accent-dim);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-danger-dim: var(--danger-dim);
+  --color-info: var(--info);
+
+  --shadow-soft: var(--shadow-soft);
+  --shadow-pop: var(--shadow-pop);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+code,
+pre,
+.font-mono {
+  letter-spacing: 0;
+  font-variant-ligatures: none;
+}
+
+::selection {
+  background: var(--glow);
+}
+
+/* Quiet, consistent scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Focus visible everywhere, in the wisp color */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 6px;
+}
+
+/* ------------------------------------------------------------------ *
+ * Atmosphere: the wisp glow + grain used on login and setup screens.
+ * ------------------------------------------------------------------ */
+.wisp-atmosphere {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(52rem 36rem at 18% -8%, var(--glow), transparent 60%),
+    radial-gradient(40rem 30rem at 110% 110%, color-mix(in srgb, var(--glow) 55%, transparent), transparent 65%),
+    var(--bg-deep);
+}
+.wisp-atmosphere::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.04 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Entrance animation for hero cards */
+@keyframes wisp-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-rise {
+  animation: wisp-rise 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.animate-rise-slow {
+  animation: wisp-rise 640ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both;
+}
+
+@keyframes wisp-pulse {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+.animate-wisp-pulse {
+  animation: wisp-pulse 1.6s ease-in-out infinite;
+}
+
+/* Email body container (already sanitized server-side) */
+.email-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+
+/* Rich-text composer content */
+.wisp-richtext {
+  overflow-wrap: anywhere;
+}
+.wisp-richtext:focus {
+  outline: none;
+}
+.wisp-richtext a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.wisp-richtext ul,
+.wisp-richtext ol {
+  margin: 0.4em 0;
+  padding-left: 1.5em;
+}
+.wisp-richtext ul {
+  list-style: disc;
+}
+.wisp-richtext ol {
+  list-style: decimal;
+}
+.wisp-richtext blockquote {
+  margin: 0.4em 0 0.4em 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--line-strong);
+  color: var(--muted);
+}
+.wisp-richtext p {
+  margin: 0 0 0.5em;
+}
+.wisp-richtext h1 {
+  font-size: 1.4em;
+  font-weight: 600;
+  margin: 0.4em 0;
+}
+.wisp-richtext h2 {
+  font-size: 1.2em;
+  font-weight: 600;
+  margin: 0.4em 0;
+}
