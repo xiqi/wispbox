@@ -197,6 +197,8 @@ export interface UpgradeStatus {
   current_version: string;
   current_commit: string;
   current_date: string;
+  latest_version?: string;
+  update_available: boolean;
   target_version?: string;
   started_at?: string;
   finished_at?: string;
@@ -212,5 +214,6 @@ export interface SetupStatus {
   server_ipv4: string;
   domains: Domain[] | null;
   mailbox_count: number;
-  checks: { name: string; ok: boolean; detail: string }[];
+  outbound_smtp_25_open: boolean | null;
+  checks: { name: string; ok: boolean; detail: string; required: boolean }[];
 }

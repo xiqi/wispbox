@@ -15,6 +15,7 @@ export function formatBytes(n?: number): string {
 
 /** Formats a mailbox quota given in whole megabytes. */
 export function formatQuota(mb: number): string {
+  if (!mb || mb <= 0) return "No quota";
   return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
 }
 

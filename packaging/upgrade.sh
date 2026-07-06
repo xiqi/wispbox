@@ -73,6 +73,14 @@ else
     TARGET_VERSION="${TAG#v}"
 fi
 
+CURRENT_VERSION="$(/usr/local/bin/wispboxctl version 2>/dev/null | awk 'NR == 1 {print $2}')"
+if [ -n "$CURRENT_VERSION" ] && [ "${CURRENT_VERSION#v}" = "$TARGET_VERSION" ]; then
+    write_status succeeded "$TARGET_VERSION" "wispbox is already up to date." "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    DONE=1
+    echo "==> $(date -u +%Y-%m-%dT%H:%M:%SZ) already running $TAG"
+    exit 0
+fi
+
 write_status running "$TARGET_VERSION" "Downloading installer for $TAG..." ""
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"; cleanup' EXIT INT TERM

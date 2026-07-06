@@ -163,7 +163,15 @@ func (q *MockQueue) Count(ctx context.Context) (int, error) {
 	return len(items), nil
 }
 
-func (q *MockQueue) Flush(_ context.Context) error { return nil }
+func (q *MockQueue) Flush(_ context.Context) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for i := range q.Items {
+		q.Items[i].Queue = "active"
+		q.Items[i].Reason = ""
+	}
+	return nil
+}
 
 func (q *MockQueue) Retry(_ context.Context, queueID string) error {
 	q.mu.Lock()

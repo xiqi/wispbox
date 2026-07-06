@@ -118,6 +118,7 @@ func TestRenderDovecotSQL(t *testing.T) {
 	for _, w := range []string{
 		"default_pass_scheme = BLF-CRYPT",
 		"connect = " + env.cfg.DBPath,
+		"CASE WHEN m.quota_mb > 0 THEN '*:storage=' || m.quota_mb || 'M' ELSE NULL END AS quota_rule",
 	} {
 		if !strings.Contains(sqlConf, w) {
 			t.Errorf("dovecot-sql.conf.ext: missing %q", w)
@@ -203,6 +204,7 @@ func TestRenderDovecot24(t *testing.T) {
 		"BLF-CRYPT",
 		// Per-user quota limit uses the 2.4 userdb_-prefixed field.
 		"userdb_quota_storage_size",
+		"CASE WHEN m.quota_mb > 0 THEN m.quota_mb || 'M' ELSE NULL END AS userdb_quota_storage_size",
 	} {
 		if !strings.Contains(sqlConf, w) {
 			t.Errorf("dovecot-sql.conf.ext (2.4): missing %q", w)

@@ -1,4 +1,4 @@
-import { Play, RefreshCw, Trash2, Zap } from "lucide-react";
+import { Loader2, Play, RefreshCw, Trash2, Zap } from "lucide-react";
 import { useState } from "react";
 import { del, get, post } from "../../../lib/api";
 import { useLoad } from "../../../lib/hooks";
@@ -20,38 +20,71 @@ import {
   toast,
 } from "../../../components/ui";
 
+const loadQueue = () => get<{ items: QueueItem[] }>("/api/admin/queue");
+
 export default function Queue() {
-  const { data, error, busy, reload } = useLoad(() =>
-    get<{ items: QueueItem[] }>("/api/admin/queue"),
-  );
+  const { data, error, busy, reload, setData } = useLoad(loadQueue);
   const [deleting, setDeleting] = useState<QueueItem | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [flushing, setFlushing] = useState(false);
+  const [retrying, setRetrying] = useState("");
+
+  async function refreshQueue(message = "Queue refreshed") {
+    setRefreshing(true);
+    try {
+      const next = await loadQueue();
+      setData(next);
+      toast(message);
+    } catch (e: any) {
+      toast(e.message, "error");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  async function retryAll() {
+    setFlushing(true);
+    try {
+      await post("/api/admin/queue/flush");
+      const next = await loadQueue();
+      setData(next);
+      toast(next.items.length === 0 ? "Queue is empty" : "Retry started for queued mail");
+    } catch (e: any) {
+      toast(e.message, "error");
+    } finally {
+      setFlushing(false);
+    }
+  }
+
+  async function retryOne(queueID: string) {
+    setRetrying(queueID);
+    try {
+      await post(`/api/admin/queue/${queueID}/retry`);
+      const next = await loadQueue();
+      setData(next);
+      toast("Retry started");
+    } catch (e: any) {
+      toast(e.message, "error");
+    } finally {
+      setRetrying("");
+    }
+  }
 
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
         <div className="flex gap-2">
-          <Button size="sm" onClick={reload}>
-            <RefreshCw size={13} /> Refresh
+          <Button size="sm" onClick={() => refreshQueue()} busy={refreshing} disabled={busy || flushing}>
+            {!refreshing && <RefreshCw size={13} />} Refresh
           </Button>
           <Button
             size="sm"
             variant="primary"
-            onClick={async () => {
-              setFlushing(true);
-              try {
-                await post("/api/admin/queue/flush");
-                toast("Delivery attempt triggered for all queued mail");
-                setTimeout(reload, 1500);
-              } catch (e: any) {
-                toast(e.message, "error");
-              } finally {
-                setFlushing(false);
-              }
-            }}
+            onClick={retryAll}
             busy={flushing}
+            disabled={busy || refreshing}
           >
-            <Zap size={13} /> Retry all now
+            {!flushing && <Zap size={13} />} Retry all now
           </Button>
         </div>
       </div>
@@ -104,16 +137,15 @@ export default function Queue() {
                       <IconButton
                         title="Retry this message"
                         tone="accent"
-                        icon={<Play size={14} />}
-                        onClick={async () => {
-                          try {
-                            await post(`/api/admin/queue/${q.queue_id}/retry`);
-                            toast("Retry triggered");
-                            setTimeout(reload, 1200);
-                          } catch (e: any) {
-                            toast(e.message, "error");
-                          }
-                        }}
+                        disabled={retrying === q.queue_id || flushing}
+                        icon={
+                          retrying === q.queue_id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Play size={14} />
+                          )
+                        }
+                        onClick={() => retryOne(q.queue_id)}
                       />
                       <IconButton
                         title="Delete from queue"

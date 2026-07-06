@@ -26,7 +26,9 @@ import {
 export default function Delivery() {
   const domains = useLoad(() => get<{ domains: Domain[] }>("/api/admin/domains"));
   const relays = useLoad(() => get<{ relays: Relay[] }>("/api/admin/relays"));
-  const policies = useLoad(() => get<{ policies: Policy[] }>("/api/admin/delivery-policies"));
+  const policies = useLoad(() =>
+    get<{ policies: Policy[]; outbound_smtp_25_open: boolean | null }>("/api/admin/delivery-policies"),
+  );
   const presets = useLoad(() => get<{ presets: RelayPreset[] }>("/api/admin/relay-presets"));
   const [addingRelay, setAddingRelay] = useState(false);
   const [deletingRelay, setDeletingRelay] = useState<Relay | null>(null);
@@ -42,6 +44,9 @@ export default function Delivery() {
   if ((domains.busy && !domains.data) || (policies.busy && !policies.data)) return <Spinner />;
 
   const globalPolicy = policies.data?.policies.find((p) => p.scope_type === "global");
+  const outbound25Blocked = policies.data?.outbound_smtp_25_open === false;
+  const directBlockedMessage =
+    "Outbound port 25 is not available on this server. Add an SMTP relay and choose relay instead.";
   const domainPolicies = new Map(
     (policies.data?.policies ?? [])
       .filter((p) => p.scope_type === "domain")
@@ -49,6 +54,10 @@ export default function Delivery() {
   );
 
   async function setPolicy(scope: "global" | "domain", scopeID: number, value: string) {
+    if (value === "direct" && outbound25Blocked) {
+      toast(directBlockedMessage, "error");
+      return;
+    }
     const currentValue =
       scope === "global"
         ? policyValue(globalPolicy)
@@ -122,6 +131,7 @@ export default function Delivery() {
           <p className="text-[12.5px] leading-relaxed text-faint">
             Relay delivery stays explicit; wispbox never silently falls back to direct sending.
           </p>
+          {outbound25Blocked && <ErrorNote>{directBlockedMessage}</ErrorNote>}
         </div>
       </Card>
 

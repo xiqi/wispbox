@@ -145,8 +145,8 @@ func TestCreateMailbox(t *testing.T) {
 	if mb.LocalPart != "user.name" {
 		t.Errorf("LocalPart = %q, want %q", mb.LocalPart, "user.name")
 	}
-	if mb.QuotaMB != 1024 {
-		t.Errorf("QuotaMB = %d, want default 1024", mb.QuotaMB)
+	if mb.QuotaMB != 0 {
+		t.Errorf("QuotaMB = %d, want default 0", mb.QuotaMB)
 	}
 	if !mb.Enabled {
 		t.Error("Enabled = false, want true")
@@ -247,6 +247,16 @@ func TestMailboxLookupUpdateDelete(t *testing.T) {
 	if got.QuotaMB != 2048 || got.Enabled || got.PasswordHash != "newhash" {
 		t.Errorf("after update got quota=%d enabled=%v hash=%q, want 2048 false newhash",
 			got.QuotaMB, got.Enabled, got.PasswordHash)
+	}
+	if err := st.UpdateMailbox(ctx, mb.ID, 0, true); err != nil {
+		t.Fatalf("UpdateMailbox clear quota: %v", err)
+	}
+	got, err = st.GetMailbox(ctx, mb.ID)
+	if err != nil {
+		t.Fatalf("GetMailbox after clear quota: %v", err)
+	}
+	if got.QuotaMB != 0 || !got.Enabled {
+		t.Errorf("after clear quota got quota=%d enabled=%v, want 0 true", got.QuotaMB, got.Enabled)
 	}
 
 	if err := st.DeleteMailbox(ctx, mb.ID); err != nil {

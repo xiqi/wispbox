@@ -5,8 +5,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 const (
@@ -16,16 +20,18 @@ const (
 
 // Status is the admin-facing view of the latest upgrade attempt.
 type Status struct {
-	Available      bool     `json:"available"`
-	State          string   `json:"state"`
-	CurrentVersion string   `json:"current_version"`
-	CurrentCommit  string   `json:"current_commit"`
-	CurrentDate    string   `json:"current_date"`
-	TargetVersion  string   `json:"target_version,omitempty"`
-	StartedAt      string   `json:"started_at,omitempty"`
-	FinishedAt     string   `json:"finished_at,omitempty"`
-	Message        string   `json:"message,omitempty"`
-	LogTail        []string `json:"log_tail,omitempty"`
+	Available       bool     `json:"available"`
+	State           string   `json:"state"`
+	CurrentVersion  string   `json:"current_version"`
+	CurrentCommit   string   `json:"current_commit"`
+	CurrentDate     string   `json:"current_date"`
+	LatestVersion   string   `json:"latest_version,omitempty"`
+	UpdateAvailable bool     `json:"update_available"`
+	TargetVersion   string   `json:"target_version,omitempty"`
+	StartedAt       string   `json:"started_at,omitempty"`
+	FinishedAt      string   `json:"finished_at,omitempty"`
+	Message         string   `json:"message,omitempty"`
+	LogTail         []string `json:"log_tail,omitempty"`
 }
 
 // Read returns a best-effort status. Missing files mean no upgrade has run.
@@ -71,4 +77,48 @@ func Tail(path string, n int) []string {
 		return []string{}
 	}
 	return lines
+}
+
+func LatestReleaseVersion(ctx context.Context, repo string) (string, error) {
+	repo = strings.TrimSpace(repo)
+	if repo == "" {
+		repo = "xiqi/wispbox"
+	}
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/repos/"+repo+"/releases/latest", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("latest release lookup returned %s", resp.Status)
+	}
+	var body struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(body.TagName) == "" {
+		return "", fmt.Errorf("latest release has no tag")
+	}
+	return NormalizeVersion(body.TagName), nil
+}
+
+func NormalizeVersion(v string) string {
+	v = strings.TrimSpace(v)
+	v = strings.TrimPrefix(v, "wispbox ")
+	v = strings.TrimPrefix(v, "v")
+	return v
+}
+
+func SameVersion(a, b string) bool {
+	return NormalizeVersion(a) != "" && NormalizeVersion(a) == NormalizeVersion(b)
 }

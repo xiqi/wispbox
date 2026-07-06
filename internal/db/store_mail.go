@@ -109,8 +109,8 @@ func (s *Store) CreateMailbox(ctx context.Context, domainID int64, localPart, pa
 	if err != nil {
 		return nil, err
 	}
-	if quotaMB <= 0 {
-		quotaMB = 1024
+	if quotaMB < 0 {
+		quotaMB = 0
 	}
 	email := localPart + "@" + dom.Name
 	now := NowString()

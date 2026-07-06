@@ -18,9 +18,12 @@ import (
 	"time"
 
 	"github.com/pquerna/otp/totp"
+	"github.com/xiqi/wispbox/internal/admin"
 	"github.com/xiqi/wispbox/internal/api"
 	"github.com/xiqi/wispbox/internal/auth"
+	"github.com/xiqi/wispbox/internal/buildinfo"
 	"github.com/xiqi/wispbox/internal/config"
+	"github.com/xiqi/wispbox/internal/smtpclient"
 )
 
 const (
@@ -276,6 +279,33 @@ func TestRouteAuthorization(t *testing.T) {
 	}
 }
 
+func TestAdminOverviewShowsQueuedDeliveryErrors(t *testing.T) {
+	_, srv := newTestServer(t, true)
+	c := newClient(t, srv)
+	c.loginAdmin(seedAdminUsername, seedAdminPassword)
+
+	status, body := c.get("/api/admin/overview")
+	if status != http.StatusOK {
+		t.Fatalf("overview: status = %d, body %v", status, body)
+	}
+	raw, ok := field(t, body, "recent_errors").([]any)
+	if !ok {
+		t.Fatalf("recent_errors is %T, want array: %v", body["recent_errors"], body)
+	}
+	for _, item := range raw {
+		ev, ok := item.(map[string]any)
+		if !ok {
+			t.Fatalf("recent_errors item is %T, want object: %v", item, item)
+		}
+		if str(t, ev, "service") == "postfix" &&
+			str(t, ev, "event_type") == "delivery" &&
+			strings.Contains(str(t, ev, "message"), "Connection timed out") {
+			return
+		}
+	}
+	t.Fatalf("recent_errors = %v, want queued delivery timeout", raw)
+}
+
 // ---- (2) CSRF ----
 
 func TestCSRFRequiredOnAdminMutations(t *testing.T) {
@@ -298,6 +328,76 @@ func TestCSRFRequiredOnAdminMutations(t *testing.T) {
 	dom := obj(t, body, "domain")
 	if got := str(t, dom, "mail_hostname"); got != "mail.csrf.example" {
 		t.Errorf("mail_hostname = %q, want mail.csrf.example", got)
+	}
+}
+
+func TestDirectDeliveryRequiresOutbound25(t *testing.T) {
+	app, srv := newTestServer(t, true)
+	app.Cfg.Mode = config.ModeProduction
+	app.AdminH.Core.OutboundSMTP25Open = func(context.Context) bool { return false }
+	c := newClient(t, srv)
+	c.loginAdmin(seedAdminUsername, seedAdminPassword)
+
+	status, body := c.post("/api/admin/delivery-policies", map[string]any{
+		"scope_type": "global", "mode": "direct",
+	})
+	if status != http.StatusBadRequest {
+		t.Fatalf("set direct with blocked outbound 25: status = %d, want 400 (body %v)", status, body)
+	}
+	if msg := str(t, body, "error"); !strings.Contains(msg, "outbound port 25") || !strings.Contains(msg, "relay") {
+		t.Fatalf("blocked direct error = %q, want port 25 relay guidance", msg)
+	}
+}
+
+func TestUpgradeDoesNotStartWhenAlreadyLatest(t *testing.T) {
+	app, srv := newTestServer(t, true)
+	app.Cfg.Mode = config.ModeProduction
+	app.AdminH.LatestVersion = func(context.Context) (string, error) {
+		return "v" + buildinfo.Version, nil
+	}
+	c := newClient(t, srv)
+	c.loginAdmin(seedAdminUsername, seedAdminPassword)
+
+	status, body := c.get("/api/admin/upgrade")
+	if status != http.StatusOK {
+		t.Fatalf("upgrade status: status = %d, body %v", status, body)
+	}
+	if got := str(t, body, "latest_version"); got != buildinfo.Version {
+		t.Fatalf("latest_version = %q, want %q", got, buildinfo.Version)
+	}
+	if boolean(t, body, "update_available") {
+		t.Fatalf("update_available = true, want false")
+	}
+
+	status, body = c.post("/api/admin/upgrade", nil)
+	if status != http.StatusConflict {
+		t.Fatalf("start already-latest upgrade: status = %d, want 409 (body %v)", status, body)
+	}
+	if msg := str(t, body, "error"); !strings.Contains(msg, "up to date") {
+		t.Fatalf("already-latest error = %q, want up to date guidance", msg)
+	}
+}
+
+func TestAdminCertificateIssue(t *testing.T) {
+	_, srv := newTestServer(t, true)
+	c := newClient(t, srv)
+	c.loginAdmin(seedAdminUsername, seedAdminPassword)
+
+	status, body := c.get("/api/admin/certificates")
+	if status != http.StatusOK {
+		t.Fatalf("list certificates: status = %d, body %v", status, body)
+	}
+	if got := str(t, body, "primary_hostname"); got != "mail.example.com" {
+		t.Errorf("primary_hostname = %q, want mail.example.com", got)
+	}
+
+	status, body = c.post("/api/admin/certificates/admin/issue", nil)
+	if status != http.StatusAccepted {
+		t.Fatalf("issue admin certificate: status = %d, body %v", status, body)
+	}
+	cert := obj(t, body, "certificate")
+	if got := str(t, cert, "hostname"); got != "mail.example.com" {
+		t.Errorf("certificate hostname = %q, want mail.example.com", got)
 	}
 }
 
@@ -570,8 +670,12 @@ func TestAdminCRUD(t *testing.T) {
 // ---- (4) mail API against the mock adapters ----
 
 func TestMailAPI(t *testing.T) {
-	_, srv := newTestServer(t, true)
+	app, srv := newTestServer(t, true)
 	c := newClient(t, srv)
+	mockSMTP, ok := app.SMTP.(*smtpclient.MockSender)
+	if !ok {
+		t.Fatalf("SMTP = %T, want *smtpclient.MockSender", app.SMTP)
+	}
 
 	// Wrong password is a 401.
 	status, body := c.post("/api/mail/login",
@@ -638,6 +742,31 @@ func TestMailAPI(t *testing.T) {
 		t.Errorf("has_blocked_images = false, want true for the newsletter")
 	}
 
+	// Reply recipients are editable: the API must honor explicit To/Cc/Bcc
+	// instead of silently re-deriving them from the original message.
+	replyBefore := mockSMTP.SentCount()
+	const customReplySubject = "Custom reply subject"
+	status, body = c.post("/api/mail/reply", map[string]any{
+		"id": newsletterID, "to": "custom-to@example.net", "cc": "custom-cc@example.net",
+		"bcc": "custom-bcc@example.net", "subject": customReplySubject, "body": "edited reply",
+	})
+	if status != http.StatusOK {
+		t.Fatalf("custom reply: status = %d, body %v", status, body)
+	}
+	if got := mockSMTP.SentCount(); got != replyBefore+1 {
+		t.Fatalf("mock sent count = %d, want %d", got, replyBefore+1)
+	}
+	replyRaw := string(mockSMTP.Sent[replyBefore].Raw)
+	if got := strings.Join(mockSMTP.Sent[replyBefore].To, ","); got != "custom-to@example.net,custom-cc@example.net,custom-bcc@example.net" {
+		t.Errorf("custom reply envelope recipients = %q", got)
+	}
+	if !strings.Contains(replyRaw, "Subject: "+customReplySubject) {
+		t.Errorf("custom reply subject not found in raw message:\n%s", replyRaw)
+	}
+	if strings.Contains(strings.ToLower(replyRaw), "\nbcc:") {
+		t.Errorf("custom reply leaked Bcc header:\n%s", replyRaw)
+	}
+
 	// Sending JSON (no attachments) succeeds and lands in Sent.
 	const sentSubject = "API test: hello from api_test"
 	status, body = c.post("/api/mail/send", map[string]any{
@@ -697,7 +826,7 @@ func TestMailAPI(t *testing.T) {
 // ---- (5) setup gating on a fresh instance ----
 
 func TestSetupGating(t *testing.T) {
-	_, srv := newTestServer(t, false) // fresh: no seed
+	app, srv := newTestServer(t, false) // fresh: no seed
 	c := newClient(t, srv)
 
 	// Before setup, / redirects to /setup.
@@ -752,6 +881,21 @@ func TestSetupGating(t *testing.T) {
 	if status != http.StatusCreated {
 		t.Fatalf("setup mailbox: status = %d, body %v", status, body)
 	}
+	if got := num(t, obj(t, body, "mailbox"), "quota_mb"); got != 0 {
+		t.Errorf("setup mailbox quota_mb = %v, want 0", got)
+	}
+
+	status, body = c.post("/api/setup/test-email", map[string]any{"to": "owner@example.net"})
+	if status != http.StatusOK || !boolean(t, body, "ok") {
+		t.Fatalf("setup test email: status = %d, body %v", status, body)
+	}
+	mockMailer, ok := app.TestMailer.(*admin.MockTestMailer)
+	if !ok {
+		t.Fatalf("TestMailer = %T, want *admin.MockTestMailer", app.TestMailer)
+	}
+	if mockMailer.LastFrom != "me@fresh.example" {
+		t.Errorf("setup test email sender = %q, want me@fresh.example", mockMailer.LastFrom)
+	}
 
 	if status, body = c.post("/api/setup/complete", nil); status != http.StatusOK {
 		t.Fatalf("setup complete: status = %d, body %v", status, body)
@@ -773,6 +917,29 @@ func TestSetupGating(t *testing.T) {
 	resp, _ = c.do(http.MethodGet, "/", nil, "")
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("GET / after complete: status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestSetupDirectDeliveryRequiresOutbound25(t *testing.T) {
+	app, srv := newTestServer(t, false)
+	c := newClient(t, srv)
+
+	status, body := c.post("/api/setup/admin", map[string]any{
+		"username": "owner", "password": "sunny-meadow-99",
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("setup admin: status = %d, body %v", status, body)
+	}
+	c.csrf = str(t, body, "csrf")
+
+	app.Cfg.Mode = config.ModeProduction
+	app.AdminH.Core.OutboundSMTP25Open = func(context.Context) bool { return false }
+	status, body = c.post("/api/setup/delivery", map[string]any{"mode": "direct"})
+	if status != http.StatusBadRequest {
+		t.Fatalf("setup direct with blocked outbound 25: status = %d, want 400 (body %v)", status, body)
+	}
+	if msg := str(t, body, "error"); !strings.Contains(msg, "outbound port 25") || !strings.Contains(msg, "relay") {
+		t.Fatalf("blocked setup direct error = %q, want port 25 relay guidance", msg)
 	}
 }
 

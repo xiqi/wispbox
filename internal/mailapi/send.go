@@ -187,10 +187,14 @@ func (h *Handlers) deliver(w http.ResponseWriter, r *http.Request, mc *mailCtx, 
 // reply loads the original to prefill threading headers, then delivers.
 func (h *Handlers) reply(w http.ResponseWriter, r *http.Request, mc *mailCtx) {
 	var req struct {
-		ID       string `json:"id"`
-		Body     string `json:"body"`
-		HTMLBody string `json:"html_body"`
-		ReplyAll bool   `json:"reply_all"`
+		ID       string  `json:"id"`
+		To       *string `json:"to"`
+		CC       *string `json:"cc"`
+		BCC      *string `json:"bcc"`
+		Subject  *string `json:"subject"`
+		Body     string  `json:"body"`
+		HTMLBody string  `json:"html_body"`
+		ReplyAll bool    `json:"reply_all"`
 	}
 	if err := httpjson.Decode(w, r, &req, 4<<20); err != nil {
 		httpjson.Error(w, http.StatusBadRequest, err)
@@ -216,10 +220,18 @@ func (h *Handlers) reply(w http.ResponseWriter, r *http.Request, mc *mailCtx) {
 		to = append(to, a.Email)
 	}
 	var cc []string
+	seen := map[string]bool{strings.ToLower(mc.Mailbox.Email): true}
+	for _, a := range replyTo {
+		if a.Email != "" {
+			seen[strings.ToLower(a.Email)] = true
+		}
+	}
 	if req.ReplyAll {
 		for _, a := range append(orig.To, orig.CC...) {
-			if a.Email != mc.Mailbox.Email && a.Email != "" {
+			key := strings.ToLower(a.Email)
+			if key != "" && !seen[key] {
 				cc = append(cc, a.Email)
+				seen[key] = true
 			}
 		}
 	}
@@ -227,9 +239,24 @@ func (h *Handlers) reply(w http.ResponseWriter, r *http.Request, mc *mailCtx) {
 	if !strings.HasPrefix(strings.ToLower(subject), "re:") {
 		subject = "Re: " + subject
 	}
+	toField := strings.Join(to, ", ")
+	ccField := strings.Join(cc, ", ")
+	bccField := ""
+	if req.To != nil {
+		toField = *req.To
+	}
+	if req.CC != nil {
+		ccField = *req.CC
+	}
+	if req.BCC != nil {
+		bccField = *req.BCC
+	}
+	if req.Subject != nil {
+		subject = *req.Subject
+	}
 	h.deliver(w, r, mc, &sendRequest{
-		To: strings.Join(to, ", "), CC: strings.Join(cc, ", "),
-		Subject: subject, Body: req.Body, HTMLBody: req.HTMLBody,
+		To: toField, CC: ccField, BCC: bccField, Subject: subject,
+		Body: req.Body, HTMLBody: req.HTMLBody,
 		InReplyTo: orig.MessageID,
 	})
 }

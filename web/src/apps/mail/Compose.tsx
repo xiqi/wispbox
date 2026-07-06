@@ -1,10 +1,10 @@
-import { type FormEvent, useMemo, useRef, useState } from "react";
+import { type FormEvent, type InputHTMLAttributes, useMemo, useRef, useState } from "react";
 import { Paperclip, X } from "lucide-react";
 import { post, postForm } from "../../lib/api";
-import type { MessageDetail } from "../../lib/types";
+import type { Address, MessageDetail } from "../../lib/types";
 import { addressLine, formatBytes } from "../../lib/format";
 import { forwardSeed, replySeed } from "../../lib/mail-html";
-import { Button, ConfirmDialog, ErrorNote, IconButton, Input, toast } from "../../components/ui";
+import { Button, ConfirmDialog, ErrorNote, IconButton, toast } from "../../components/ui";
 import { RichEditor } from "../../components/RichEditor";
 
 export type ComposeSeed =
@@ -22,11 +22,11 @@ export default function Compose({
   onClose: () => void;
   onSent: () => void;
 }) {
-  const initial = useMemo(() => seedValues(seed), [seed]);
+  const initial = useMemo(() => seedValues(seed, me), [seed, me]);
   const [to, setTo] = useState(initial.to);
   const [cc, setCc] = useState(initial.cc);
   const [bcc, setBcc] = useState("");
-  const [showCc, setShowCc] = useState(initial.cc !== "");
+  const [showCc, setShowCc] = useState(seed.mode !== "new" || initial.cc !== "");
   const [subject, setSubject] = useState(initial.subject);
   // The rich editor manages HTML; we keep the latest HTML and a derived
   // plain-text version for the multipart/alternative message.
@@ -67,6 +67,10 @@ export default function Compose({
         if (!original) throw new Error("Original message missing");
         await post("/api/mail/reply", {
           id: original.id,
+          to,
+          cc,
+          bcc,
+          subject,
           body: bodyText,
           html_body: bodyHtml,
           reply_all: seed.mode === "reply_all",
@@ -126,54 +130,44 @@ export default function Compose({
         </header>
 
         <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
-          {!isReply && (
-            <div className="flex items-center gap-2">
-              <Input
-                type="text"
-                placeholder="To — separate addresses with commas"
-                required
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                autoFocus={seed.mode !== "reply"}
-              />
-              {!showCc && (
-                <button
-                  type="button"
-                  className="shrink-0 text-[12px] text-faint hover:text-ink"
-                  onClick={() => setShowCc(true)}
-                >
-                  Cc/Bcc
-                </button>
-              )}
-            </div>
-          )}
-          {isReply && original && (
-            <div className="rounded-lg bg-inset px-3 py-2 text-[12.5px] text-muted">
-              to {addressLine(original.reply_to?.length ? original.reply_to : original.header.from)}
-              {seed.mode === "reply_all" && " and everyone on the thread"}
-            </div>
-          )}
-          {showCc && !isReply && (
+          <div className="flex items-center gap-2">
+            <ComposeInput
+              label="To"
+              type="text"
+              placeholder="Recipients"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              autoFocus={seed.mode !== "reply" && seed.mode !== "reply_all"}
+            />
+            {!showCc && (
+              <button
+                type="button"
+                className="shrink-0 text-[12px] text-faint hover:text-ink"
+                onClick={() => setShowCc(true)}
+              >
+                Cc/Bcc
+              </button>
+            )}
+          </div>
+          {showCc && (
             <>
-              <Input
-                placeholder="Cc"
+              <ComposeInput
+                label="Cc"
                 value={cc}
                 onChange={(e) => setCc(e.target.value)}
               />
-              <Input
-                placeholder="Bcc"
+              <ComposeInput
+                label="Bcc"
                 value={bcc}
                 onChange={(e) => setBcc(e.target.value)}
               />
             </>
           )}
-          {!isReply && (
-            <Input
-              placeholder="Subject"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-            />
-          )}
+          <ComposeInput
+            label="Subject"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+          />
           <RichEditor
             initialHTML={initial.html}
             placeholder="Write something…"
@@ -258,7 +252,25 @@ export default function Compose({
   );
 }
 
-function seedValues(seed: ComposeSeed): {
+function ComposeInput({
+  label,
+  className = "",
+  ...props
+}: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
+  return (
+    <label
+      className={`flex h-9 w-full items-center rounded-lg border border-line bg-inset px-3 text-[13.5px] transition-shadow focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/25 ${className}`}
+    >
+      <span className="w-14 shrink-0 text-[12px] font-medium text-faint">{label}</span>
+      <input
+        className="min-w-0 flex-1 bg-transparent text-ink placeholder:text-faint focus:outline-none"
+        {...props}
+      />
+    </label>
+  );
+}
+
+function seedValues(seed: ComposeSeed, me: string): {
   to: string;
   cc: string;
   subject: string;
@@ -281,9 +293,31 @@ function seedValues(seed: ComposeSeed): {
       text,
     };
   }
-  // reply / reply_all — the To/Cc/Subject inputs are never shown for replies,
-  // and the server derives recipients and subject from the original message id,
-  // so the client sends none of them.
+  const { to, cc } = replyRecipients(o, me, seed.mode === "reply_all");
   const { html, text } = replySeed(o);
-  return { to: "", cc: "", subject: "", html, text };
+  return { to, cc, subject: replySubject(o.header.subject), html, text };
+}
+
+function replySubject(subject: string): string {
+  return subject.toLowerCase().startsWith("re:") ? subject : `Re: ${subject}`;
+}
+
+function replyRecipients(original: MessageDetail, me: string, replyAll: boolean): { to: string; cc: string } {
+  const direct = original.reply_to?.length ? original.reply_to : original.header.from;
+  if (!replyAll) return { to: addressLine(direct), cc: "" };
+
+  const seen = new Set<string>([me.toLowerCase()]);
+  for (const addr of direct ?? []) {
+    if (addr.email) seen.add(addr.email.toLowerCase());
+  }
+
+  const cc: Address[] = [];
+  for (const addr of [...(original.header.to ?? []), ...(original.cc ?? [])]) {
+    const key = addr.email.toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    cc.push(addr);
+  }
+
+  return { to: addressLine(direct), cc: addressLine(cc) };
 }

@@ -1,4 +1,5 @@
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from "react";
+import { RefreshCw } from "lucide-react";
 import { del, get, patch, post, postForm } from "../../../lib/api";
 import { brandFromSettings, useBrand } from "../../../lib/brand";
 import { useLoad } from "../../../lib/hooks";
@@ -120,7 +121,7 @@ export default function Settings() {
   return (
     <div className="space-y-5">
       <Card title="Appearance">
-        <div className="max-w-lg space-y-4">
+        <div className="max-w-lg space-y-5">
           <div className="flex items-center gap-4">
             <div className="flex h-16 w-24 items-center justify-center rounded-lg border border-line bg-inset px-3">
               <BrandMark size={34} />
@@ -133,7 +134,7 @@ export default function Settings() {
             </div>
           </div>
 
-          <form onSubmit={saveBrand} className="space-y-4">
+          <form onSubmit={saveBrand} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
             <Field label="System name" hint="Leave empty to use wispbox.">
               <Input
                 value={brandName}
@@ -142,24 +143,34 @@ export default function Settings() {
                 placeholder="wispbox"
               />
             </Field>
-            <Button type="submit" variant="primary" busy={savingBrand}>
+            <Button type="submit" variant="primary" busy={savingBrand} className="w-full sm:mt-6 sm:w-auto">
               Save appearance
             </Button>
           </form>
 
-          <Field label="Logo" hint="PNG, JPEG, or WebP. 256 KB max.">
-            <input
-              ref={logoInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              disabled={uploadingLogo}
-              onChange={uploadLogo}
-              className="block w-full text-[13px] text-muted file:mr-3 file:h-8 file:rounded-lg file:border file:border-line-strong file:bg-inset file:px-3 file:text-[12.5px] file:font-medium file:text-ink hover:file:bg-raised disabled:opacity-50"
-            />
-          </Field>
-          <Button type="button" onClick={removeLogo} disabled={!logo || uploadingLogo} busy={uploadingLogo}>
-            Remove logo
-          </Button>
+          <div className="space-y-3 border-t border-line pt-5">
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+              <Field label="Logo" hint="PNG, JPEG, or WebP. 256 KB max.">
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  disabled={uploadingLogo}
+                  onChange={uploadLogo}
+                  className="block w-full text-[13px] text-muted file:mr-3 file:h-8 file:rounded-lg file:border file:border-line-strong file:bg-inset file:px-3 file:text-[12.5px] file:font-medium file:text-ink hover:file:bg-raised disabled:opacity-50"
+                />
+              </Field>
+              <Button
+                type="button"
+                onClick={removeLogo}
+                disabled={!logo || uploadingLogo}
+                busy={uploadingLogo}
+                className="w-full sm:mt-6 sm:w-auto"
+              >
+                Remove logo
+              </Button>
+            </div>
+          </div>
         </div>
       </Card>
 
@@ -204,6 +215,7 @@ function UpdatesCard() {
     get<UpgradeStatus>("/api/admin/upgrade"),
   );
   const [starting, setStarting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (data?.state !== "running") return;
@@ -225,26 +237,49 @@ function UpdatesCard() {
     }
   }
 
+  function refreshStatus() {
+    if (refreshing) return;
+    setRefreshing(true);
+    reload();
+    window.setTimeout(() => setRefreshing(false), 500);
+  }
+
   const state = data?.state ?? "idle";
   const running = state === "running";
   const version = data?.current_version || "unknown";
+  const latest = data?.latest_version || "unknown";
+  const updateAvailable = data?.update_available === true;
+  const canUpgrade = data?.available === true && updateAvailable && !running;
+  const refreshBusy = refreshing || (busy && Boolean(data));
+  const upgradeLabel =
+    data?.available === false ? "Unavailable" : updateAvailable ? "Upgrade to latest" : "Up to date";
   const commit = data?.current_commit && data.current_commit !== "unknown" ? ` (${data.current_commit})` : "";
+  const refreshAction = (
+    <Button type="button" size="sm" onClick={refreshStatus} busy={refreshBusy}>
+      <RefreshCw size={13} className={refreshBusy ? "animate-spin" : ""} />
+      Refresh
+    </Button>
+  );
 
   return (
-    <Card title="Updates">
+    <Card title="Updates" actions={refreshAction}>
       <div className="max-w-2xl space-y-4">
         {error && <ErrorNote>{error}</ErrorNote>}
         {busy && !data ? (
           <Spinner />
         ) : (
           <>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-lg border border-line bg-inset px-3 py-2.5">
                 <div className="text-[12px] text-faint">Current version</div>
                 <div className="mt-1 truncate font-mono text-[13px] text-ink">
                   {version}
                   {commit}
                 </div>
+              </div>
+              <div className="rounded-lg border border-line bg-inset px-3 py-2.5">
+                <div className="text-[12px] text-faint">Latest version</div>
+                <div className="mt-1 truncate font-mono text-[13px] text-ink">{latest}</div>
               </div>
               <div className="rounded-lg border border-line bg-inset px-3 py-2.5">
                 <div className="text-[12px] text-faint">Upgrade status</div>
@@ -261,15 +296,12 @@ function UpdatesCard() {
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
-                variant={data?.available ? "primary" : "outline"}
+                variant={canUpgrade ? "primary" : "outline"}
                 onClick={startUpgrade}
                 busy={starting}
-                disabled={!data?.available || running}
+                disabled={!canUpgrade}
               >
-                Upgrade to latest
-              </Button>
-              <Button type="button" onClick={reload} disabled={starting}>
-                Refresh status
+                {upgradeLabel}
               </Button>
             </div>
 
@@ -288,9 +320,10 @@ function UpdatesCard() {
 function upgradeStateText(status?: UpgradeStatus) {
   if (!status) return "Unknown";
   if (status.state === "running" && status.target_version) return `Installing ${status.target_version}`;
-  if (status.state === "succeeded" && status.target_version) return `Upgraded to ${status.target_version}`;
   if (status.state === "failed") return "Failed";
   if (status.state === "running") return "Running";
+  if (status.latest_version && !status.update_available) return "Up to date";
+  if (status.state === "succeeded" && status.target_version) return `Upgraded to ${status.target_version}`;
   return "Ready";
 }
 

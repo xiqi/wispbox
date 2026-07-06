@@ -14,7 +14,7 @@ password_query = \
 user_query = \
   SELECT '{{ .MailDir }}/' || d.name || '/' || m.local_part AS home, \
          '{{ .MailUser }}' AS uid, '{{ .MailGroup }}' AS gid, \
-         '*:storage=' || m.quota_mb || 'M' AS quota_rule \
+         CASE WHEN m.quota_mb > 0 THEN '*:storage=' || m.quota_mb || 'M' ELSE NULL END AS quota_rule \
   FROM mailboxes m JOIN domains d ON d.id = m.domain_id \
   WHERE m.email = '%u' AND m.enabled = 1
 

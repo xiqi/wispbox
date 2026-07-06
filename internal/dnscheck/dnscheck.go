@@ -84,7 +84,7 @@ func (m *MockResolver) SeedHappyDomain(domain, mailHostname, serverIP, dkimSelec
 	m.MXs[strings.ToLower(domain)] = []*net.MX{{Host: mailHostname + ".", Pref: 10}}
 	m.TXT[strings.ToLower(domain)] = []string{"v=spf1 mx ~all"}
 	m.TXT[strings.ToLower(dkimSelector+"._domainkey."+domain)] = []string{dkimValue}
-	m.TXT[strings.ToLower("_dmarc."+domain)] = []string{"v=DMARC1; p=quarantine; rua=mailto:postmaster@" + domain}
+	m.TXT[strings.ToLower("_dmarc."+domain)] = []string{dmarcValue(domain)}
 }
 
 // RecordStatus values.
@@ -154,11 +154,15 @@ func RequiredRecords(in Inputs) []Record {
 		})
 	}
 	recs = append(recs, Record{
-		Type: "TXT", Name: "_dmarc." + in.Domain, Value: "v=DMARC1; p=quarantine; rua=mailto:postmaster@" + in.Domain, Purpose: "dmarc",
-		Explanation: "DMARC tells receivers what to do with mail that fails SPF/DKIM and where to send reports.",
+		Type: "TXT", Name: "_dmarc." + in.Domain, Value: dmarcValue(in.Domain), Purpose: "dmarc",
+		Explanation: "DMARC asks receivers to send reports without blocking mail while the domain is being set up.",
 	})
 	sortRecords(recs)
 	return recs
+}
+
+func dmarcValue(domain string) string {
+	return "v=DMARC1; p=none; rua=mailto:postmaster@" + domain
 }
 
 func sortRecords(recs []Record) {

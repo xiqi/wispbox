@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -24,8 +25,8 @@ func WriteDNSRecords(w http.ResponseWriter, r *http.Request, core *Core, check b
 	return dom, true
 }
 
-// SendTestEmail decodes {to}, validates it, and sends a test message from
-// postmaster@<primary_hostname> via mailer, writing the {ok[,error]} response.
+// SendTestEmail decodes {to}, validates it, and sends a test message from the
+// first enabled mailbox via mailer, writing the {ok[,error]} response.
 // It returns the validated recipient (for audit logging) and ok=false when it
 // has already written an error. Shared by the admin and setup test-email
 // handlers, which supply their own subject and body.
@@ -41,11 +42,28 @@ func SendTestEmail(w http.ResponseWriter, r *http.Request, store *db.Store, mail
 		httpjson.Error(w, http.StatusBadRequest, err)
 		return "", false
 	}
-	primary := store.GetSettingDefault(r.Context(), "primary_hostname", "localhost")
-	if err := mailer.SendTest(r.Context(), "postmaster@"+primary, req.To, subject, body); err != nil {
+	from, err := testEmailSender(r, store)
+	if err != nil {
+		httpjson.Error(w, http.StatusBadRequest, err)
+		return "", false
+	}
+	if err := mailer.SendTest(r.Context(), from, req.To, subject, body); err != nil {
 		httpjson.Write(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
 		return req.To, true
 	}
 	httpjson.Write(w, http.StatusOK, map[string]any{"ok": true})
 	return req.To, true
+}
+
+func testEmailSender(r *http.Request, store *db.Store) (string, error) {
+	mailboxes, err := store.ListMailboxes(r.Context(), 0)
+	if err != nil {
+		return "", err
+	}
+	for _, mb := range mailboxes {
+		if mb.Enabled {
+			return mb.Email, nil
+		}
+	}
+	return "", fmt.Errorf("create an enabled mailbox before sending a test email")
 }

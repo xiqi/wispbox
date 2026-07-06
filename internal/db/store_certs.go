@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const certCols = `id, domain_id, hostname, status, challenge_type, cert_path, key_path,
+const certCols = `id, COALESCE(domain_id, 0), hostname, status, challenge_type, cert_path, key_path,
 	COALESCE(not_before,''), COALESCE(not_after,''), COALESCE(last_renewed_at,''), COALESCE(renew_after,''),
 	last_error, created_at, updated_at`
 
@@ -23,10 +23,14 @@ func scanCert(scan func(dest ...any) error) (*Certificate, error) {
 
 func (s *Store) CreateCertificate(ctx context.Context, domainID int64, hostname string) (*Certificate, error) {
 	now := NowString()
+	var domain any
+	if domainID > 0 {
+		domain = domainID
+	}
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO certificates (domain_id, hostname, status, challenge_type, created_at, updated_at)
 		 VALUES (?, ?, 'pending', 'http-01', ?, ?)`,
-		domainID, strings.ToLower(hostname), now, now)
+		domain, strings.ToLower(hostname), now, now)
 	if err != nil {
 		if isUnique(err) {
 			return nil, fmt.Errorf("a certificate for %s already exists", hostname)

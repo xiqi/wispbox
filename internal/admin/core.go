@@ -17,6 +17,7 @@ import (
 	"github.com/xiqi/wispbox/internal/delivery"
 	"github.com/xiqi/wispbox/internal/dnscheck"
 	"github.com/xiqi/wispbox/internal/mailstore"
+	"github.com/xiqi/wispbox/internal/netcheck"
 	"github.com/xiqi/wispbox/internal/security"
 )
 
@@ -31,6 +32,8 @@ type Core struct {
 	Checker   *dnscheck.Checker
 	Secret    []byte
 	Log       *slog.Logger
+
+	OutboundSMTP25Open func(ctx context.Context) bool
 }
 
 // regen regenerates Postfix/Dovecot/OpenDKIM config after a mutation.
@@ -102,10 +105,10 @@ func (c *Core) UpdateMailbox(ctx context.Context, id int64, quotaMB *int64, enab
 	}
 	quota := mb.QuotaMB
 	if quotaMB != nil {
-		if *quotaMB <= 0 {
-			return nil, "", fmt.Errorf("quota must be positive")
-		}
 		quota = *quotaMB
+		if quota < 0 {
+			quota = 0
+		}
 	}
 	on := mb.Enabled
 	if enabled != nil {
@@ -261,11 +264,35 @@ func (c *Core) DeleteRelay(ctx context.Context, id int64) (*db.OutboundRelay, st
 
 // UpsertPolicy stores a delivery policy for a scope and regenerates config.
 func (c *Core) UpsertPolicy(ctx context.Context, scope db.PolicyScope, scopeID int64, mode db.DeliveryMode, relayID *int64) (*db.OutboundPolicy, string, error) {
+	if mode == db.ModeDirect && !c.directSendingAvailable(ctx) {
+		return nil, "", fmt.Errorf("outbound port 25 is not available on this server; choose SMTP relay instead")
+	}
 	policy, err := c.Engine.SetPolicy(ctx, scope, scopeID, mode, relayID)
 	if err != nil {
 		return nil, "", err
 	}
 	return policy, c.regen(ctx), nil
+}
+
+func (c *Core) directSendingAvailable(ctx context.Context) bool {
+	if c.Cfg.IsDev() {
+		return true
+	}
+	status := c.OutboundSMTP25Status(ctx)
+	return status != nil && *status
+}
+
+func (c *Core) OutboundSMTP25Status(ctx context.Context) *bool {
+	if c.Cfg.IsDev() {
+		return nil
+	}
+	var ok bool
+	if c.OutboundSMTP25Open != nil {
+		ok = c.OutboundSMTP25Open(ctx)
+	} else {
+		ok = netcheck.OutboundSMTP25Open(ctx)
+	}
+	return &ok
 }
 
 // DeletePolicy removes a delivery policy and regenerates config.

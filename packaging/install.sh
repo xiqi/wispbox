@@ -318,6 +318,23 @@ start_services() {
     done
 }
 
+check_network_ports() {
+    say "checking network ports"
+    if command -v ss >/dev/null 2>&1; then
+        for port in 25 80 443 587 993; do
+            if ! ss -ltn | awk -v p=":$port" '$4 ~ p "$" {found=1} END {exit !found}'; then
+                warn "port $port is not listening yet; setup can retry the check after services settle"
+            fi
+        done
+    else
+        warn "could not check local listening ports because 'ss' is unavailable"
+    fi
+
+    if ! curl -fsS --connect-timeout 5 --max-time 5 telnet://gmail-smtp-in.l.google.com:25 </dev/null >/dev/null 2>&1; then
+        warn "outbound port 25 appears blocked; choose SMTP relay during setup for reliable sending"
+    fi
+}
+
 print_done() {
     PUBLIC_IP=$(curl -fsS -4 --max-time 5 https://ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
     cat <<EOF
@@ -351,6 +368,7 @@ main() {
     install_sudoers
     install_systemd_unit
     start_services
+    check_network_ports
     print_done
 }
 

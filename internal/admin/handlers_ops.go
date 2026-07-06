@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os/exec"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -61,10 +62,7 @@ func (h *Handlers) overview(w http.ResponseWriter, r *http.Request, _ *adminCtx)
 	if certs == nil {
 		certs = []db.Certificate{}
 	}
-	deliveryErrors, _ := h.Core.Store.RecentServiceErrors(ctx, 10)
-	if deliveryErrors == nil {
-		deliveryErrors = []db.ServiceEvent{}
-	}
+	recentErrors := h.recentOverviewErrors(ctx, 10)
 	mailboxes, _ := h.Core.Store.ListMailboxes(ctx, 0)
 
 	httpjson.Write(w, http.StatusOK, map[string]any{
@@ -78,8 +76,129 @@ func (h *Handlers) overview(w http.ResponseWriter, r *http.Request, _ *adminCtx)
 		"domains":        domainViews,
 		"mailbox_count":  len(mailboxes),
 		"certificates":   certs,
-		"recent_errors":  deliveryErrors,
+		"recent_errors":  recentErrors,
 	})
+}
+
+func (h *Handlers) recentOverviewErrors(ctx context.Context, limit int) []db.ServiceEvent {
+	if limit <= 0 {
+		limit = 10
+	}
+	var out []db.ServiceEvent
+	seen := map[string]bool{}
+	add := func(e db.ServiceEvent) {
+		if strings.TrimSpace(e.Message) == "" {
+			return
+		}
+		key := e.Service + "\x00" + e.EventType + "\x00" + e.Message
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		out = append(out, e)
+	}
+
+	if events, err := h.Core.Store.RecentServiceErrors(ctx, limit); err == nil {
+		for _, e := range events {
+			add(e)
+		}
+	}
+
+	if h.Queue != nil {
+		if items, err := h.Queue.List(ctx); err == nil {
+			id := int64(-1)
+			for _, item := range items {
+				reason := strings.TrimSpace(item.Reason)
+				if reason == "" && item.Queue != "deferred" {
+					continue
+				}
+				if reason == "" {
+					reason = "message is still deferred"
+				}
+				add(db.ServiceEvent{
+					ID:        id,
+					Service:   "postfix",
+					EventType: "delivery",
+					Status:    "error",
+					Message: fmt.Sprintf("%s %s: %s -> %s: %s",
+						item.QueueID, item.Queue, item.Sender, strings.Join(item.Recipients, ", "), reason),
+					CreatedAt: item.ArrivedAt,
+				})
+				id--
+			}
+		} else {
+			add(db.ServiceEvent{
+				ID:        -9000,
+				Service:   "postfix",
+				EventType: "queue",
+				Status:    "error",
+				Message:   "could not read the mail queue: " + err.Error(),
+				CreatedAt: db.NowString(),
+			})
+		}
+	}
+
+	if h.Logs != nil {
+		if lines, err := h.Logs.Tail(ctx, []string{"postfix", "dovecot", "wispboxd"}, 200); err == nil {
+			id := int64(-10000)
+			for _, line := range lines {
+				if !looksLikeErrorLog(line.Message) {
+					continue
+				}
+				add(db.ServiceEvent{
+					ID:        id,
+					Service:   line.Service,
+					EventType: "log",
+					Status:    "error",
+					Message:   line.Message,
+					CreatedAt: line.Time,
+				})
+				id--
+			}
+		} else {
+			add(db.ServiceEvent{
+				ID:        -9900,
+				Service:   "wispboxd",
+				EventType: "logs",
+				Status:    "error",
+				Message:   "could not read service logs: " + err.Error(),
+				CreatedAt: db.NowString(),
+			})
+		}
+	}
+
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].CreatedAt > out[j].CreatedAt
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	if out == nil {
+		return []db.ServiceEvent{}
+	}
+	return out
+}
+
+func looksLikeErrorLog(message string) bool {
+	msg := strings.ToLower(message)
+	for _, needle := range []string{
+		"status=deferred",
+		"status=bounced",
+		"reject:",
+		"warning:",
+		"error",
+		"fatal",
+		"panic",
+		"timed out",
+		"timeout",
+		"authentication failed",
+		"lost connection",
+	} {
+		if strings.Contains(msg, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- DNS ----
@@ -105,7 +224,18 @@ func (h *Handlers) listCertificates(w http.ResponseWriter, r *http.Request, _ *a
 	if certs == nil {
 		certs = []db.Certificate{}
 	}
-	httpjson.Write(w, http.StatusOK, map[string]any{"certificates": certs})
+	primary := h.Core.Store.GetSettingDefault(r.Context(), "primary_hostname", "")
+	var adminCert *db.Certificate
+	if primary != "" {
+		if cert, err := h.Core.Store.GetCertificateByHostname(r.Context(), primary); err == nil {
+			adminCert = cert
+		}
+	}
+	httpjson.Write(w, http.StatusOK, map[string]any{
+		"certificates":      certs,
+		"primary_hostname":  primary,
+		"admin_certificate": adminCert,
+	})
 }
 
 // renewCertificate kicks issuance in the background; the UI polls status.
@@ -123,6 +253,32 @@ func (h *Handlers) renewCertificate(w http.ResponseWriter, r *http.Request, ac *
 		_ = h.Core.Certs.IssueNow(ctx, id)
 	}()
 	httpjson.Write(w, http.StatusAccepted, map[string]any{"status": "renewal started"})
+}
+
+// issueAdminCertificate tracks and issues the certificate used by the admin
+// and webmail HTTPS entry point.
+func (h *Handlers) issueAdminCertificate(w http.ResponseWriter, r *http.Request, ac *adminCtx) {
+	hostname := strings.TrimSpace(h.Core.Store.GetSettingDefault(r.Context(), "primary_hostname", ""))
+	if hostname == "" {
+		httpjson.Error(w, http.StatusBadRequest, fmt.Errorf("set the primary hostname first"))
+		return
+	}
+	if err := db.ValidateHostname(hostname); err != nil {
+		httpjson.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	cert, err := h.Core.Certs.EnsureTracked(r.Context(), 0, hostname)
+	if err != nil {
+		httpjson.Fail(w, err)
+		return
+	}
+	h.auditLog(r, ac, "admin_cert_issue", "certificate", cert.Hostname)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		_ = h.Core.Certs.IssueNow(ctx, cert.ID)
+	}()
+	httpjson.Write(w, http.StatusAccepted, map[string]any{"certificate": cert})
 }
 
 // ---- queue ----
@@ -322,6 +478,10 @@ func (h *Handlers) startUpgrade(w http.ResponseWriter, r *http.Request, ac *admi
 		httpjson.Error(w, http.StatusConflict, fmt.Errorf("upgrade already running"))
 		return
 	}
+	if st.LatestVersion != "" && !st.UpdateAvailable {
+		httpjson.Error(w, http.StatusConflict, fmt.Errorf("wispbox is already up to date"))
+		return
+	}
 
 	cmd := exec.CommandContext(r.Context(), "sudo", "-n", "/usr/bin/systemctl", "start", "--no-block", "wispbox-upgrade.service")
 	out, err := cmd.CombinedOutput()
@@ -351,5 +511,28 @@ func (h *Handlers) currentUpgradeStatus(ctx context.Context) updater.Status {
 	if !st.Available && st.Message == "" {
 		st.Message = "One-click upgrades run only on installed systemd servers."
 	}
+	st.UpdateAvailable = st.Available
+	if st.Available && st.State != "running" {
+		latest, err := h.latestVersion(ctx)
+		if err != nil {
+			if st.Message == "" {
+				st.Message = "Could not check the latest version. Refresh status and try again."
+			}
+			return st
+		}
+		st.LatestVersion = latest
+		st.UpdateAvailable = !updater.SameVersion(st.CurrentVersion, latest)
+		if !st.UpdateAvailable && st.Message == "" {
+			st.Message = "wispbox is already up to date."
+		}
+	}
 	return st
+}
+
+func (h *Handlers) latestVersion(ctx context.Context) (string, error) {
+	if h.LatestVersion != nil {
+		latest, err := h.LatestVersion(ctx)
+		return updater.NormalizeVersion(latest), err
+	}
+	return updater.LatestReleaseVersion(ctx, "")
 }

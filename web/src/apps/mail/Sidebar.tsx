@@ -24,6 +24,12 @@ const roleIcons: Record<string, typeof Inbox> = {
   custom: Archive,
 };
 
+function emailParts(email: string) {
+  const at = email.indexOf("@");
+  if (at <= 0) return { local: email, domain: "" };
+  return { local: email.slice(0, at), domain: email.slice(at + 1) };
+}
+
 export default function Sidebar({
   me,
   folders,
@@ -42,6 +48,7 @@ export default function Sidebar({
   hidden: boolean;
 }) {
   const [securityOpen, setSecurityOpen] = useState(false);
+  const account = emailParts(me);
   return (
     <aside
       className={`${hidden ? "hidden" : "flex"} w-full shrink-0 flex-col border-r border-line bg-bg-deep md:flex md:w-[218px]`}
@@ -96,11 +103,12 @@ export default function Sidebar({
       </nav>
 
       <footer className="border-t border-line px-4 py-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <div className="truncate text-[12.5px] font-medium text-ink">{me}</div>
+        <div className="space-y-2">
+          <div className="min-w-0 text-[12.5px] font-medium leading-tight">
+            <div className="break-words text-ink">{account.local}</div>
+            {account.domain && <div className="break-words text-muted">@{account.domain}</div>}
           </div>
-          <div className="flex items-center">
+          <div className="flex items-center justify-end">
             <IconButton
               title="Account security"
               onClick={() => setSecurityOpen(true)}

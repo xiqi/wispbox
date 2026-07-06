@@ -11,6 +11,25 @@ import Compose, { type ComposeSeed } from "./Compose";
 
 type MobilePane = "folders" | "list" | "message";
 
+const folderRoleRank: Record<Folder["role"], number> = {
+  inbox: 0,
+  sent: 1,
+  drafts: 2,
+  junk: 3,
+  trash: 4,
+  custom: 5,
+};
+
+function orderMailFolders(folders: Folder[]) {
+  return [...folders].sort((a, b) => {
+    const byRole = folderRoleRank[a.role] - folderRoleRank[b.role];
+    if (byRole !== 0) return byRole;
+    const aLabel = a.role === "inbox" ? "Inbox" : a.name;
+    const bLabel = b.role === "inbox" ? "Inbox" : b.name;
+    return aLabel.localeCompare(bLabel, undefined, { numeric: true, sensitivity: "base" });
+  });
+}
+
 export default function MailApp() {
   const brand = useBrand();
   const [me, setMe] = useState<string | null | undefined>(undefined);
@@ -24,6 +43,7 @@ export default function MailApp() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [compose, setCompose] = useState<ComposeSeed | null>(null);
   const [listError, setListError] = useState("");
+  const [refreshBusy, setRefreshBusy] = useState(false);
   const [mobilePane, setMobilePane] = useState<MobilePane>("list");
 
   // Session probe. The CSRF token is stateless (an HMAC of the session), so
@@ -46,7 +66,7 @@ export default function MailApp() {
   const loadFolders = useCallback(async () => {
     try {
       const r = await get<{ folders: Folder[] }>("/api/mail/folders");
-      setFolders(r.folders ?? []);
+      setFolders(orderMailFolders(r.folders ?? []));
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) setMe(null);
     }
@@ -96,10 +116,19 @@ export default function MailApp() {
     return () => clearTimeout(t);
   }, [me, folder, query, loadMessages]);
 
-  const refresh = useCallback(() => {
-    loadFolders();
-    loadMessages(folder, query);
-  }, [folder, query, loadFolders, loadMessages]);
+  const refresh = useCallback(async () => {
+    if (refreshBusy) return;
+    setRefreshBusy(true);
+    try {
+      await Promise.all([
+        loadFolders(),
+        loadMessages(folder, query),
+        new Promise((resolve) => window.setTimeout(resolve, 350)),
+      ]);
+    } finally {
+      setRefreshBusy(false);
+    }
+  }, [folder, query, refreshBusy, loadFolders, loadMessages]);
 
   if (me === undefined) return <Spinner label="Loading mail…" />;
   if (me === null)
@@ -151,6 +180,7 @@ export default function MailApp() {
         nextCursor={nextCursor}
         onLoadMore={() => loadMessages(folder, query, nextCursor)}
         onRefresh={refresh}
+        refreshing={refreshBusy}
         hidden={mobilePane !== "list"}
       />
       <MessageView

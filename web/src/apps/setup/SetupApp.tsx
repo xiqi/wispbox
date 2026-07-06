@@ -7,6 +7,7 @@ import {
   Loader2,
   Mail,
   RefreshCw,
+  TriangleAlert,
   XCircle,
 } from "lucide-react";
 import { get, post, setCsrf } from "../../lib/api";
@@ -49,27 +50,34 @@ export default function SetupApp() {
   const [step, setStep] = useState(0);
   const [domain, setDomain] = useState<Domain | null>(null);
   const [loadError, setLoadError] = useState("");
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     document.title = `${brand.name} Setup`;
   }, [brand.name]);
 
+  async function loadStatus(resume = true) {
+    setChecking(true);
+    try {
+      const s = await get<SetupStatus & { csrf?: string }>("/api/setup/status");
+      if (s.csrf) setCsrf(s.csrf);
+      setStatus(s);
+      if (!resume) return;
+      if (s.has_admin && !s.authenticated) setStep(1);
+      else if (s.domains && s.domains.length > 0 && s.authenticated) {
+        setDomain(s.domains[0]);
+        setStep(s.mailbox_count > 0 ? 8 : 5);
+      } else if (s.authenticated && s.primary_hostname) setStep(3);
+      else if (s.has_admin && s.authenticated) setStep(2);
+    } catch (e: any) {
+      setLoadError(e.message);
+    } finally {
+      setChecking(false);
+    }
+  }
+
   useEffect(() => {
-    get<SetupStatus & { csrf?: string }>("/api/setup/status")
-      .then((s) => {
-        // Resuming mid-wizard after a reload: the admin session cookie may
-        // still be live, so restore the CSRF token from the probe.
-        if (s.csrf) setCsrf(s.csrf);
-        setStatus(s);
-        // resume mid-wizard
-        if (s.has_admin && !s.authenticated) setStep(1);
-        else if (s.domains && s.domains.length > 0 && s.authenticated) {
-          setDomain(s.domains[0]);
-          setStep(s.mailbox_count > 0 ? 8 : 5);
-        } else if (s.authenticated && s.primary_hostname) setStep(3);
-        else if (s.has_admin && s.authenticated) setStep(2);
-      })
-      .catch((e) => setLoadError(e.message));
+    loadStatus();
   }, []);
 
   if (loadError) {
@@ -91,7 +99,14 @@ export default function SetupApp() {
 
   return (
     <Shell step={step}>
-      {step === 0 && <StepChecks status={status} onNext={next} />}
+      {step === 0 && (
+        <StepChecks
+          status={status}
+          checking={checking}
+          onRetry={() => loadStatus(false)}
+          onNext={next}
+        />
+      )}
       {step === 1 && (
         <StepAdmin
           hasAdmin={status.has_admin}
@@ -108,7 +123,7 @@ export default function SetupApp() {
           }}
         />
       )}
-      {step === 4 && <StepDelivery onNext={next} />}
+      {step === 4 && <StepDelivery outbound25Open={status.outbound_smtp_25_open} onNext={next} />}
       {step === 5 && domain && <StepDns domain={domain} onNext={next} />}
       {step === 6 && domain && <StepCertificate domain={domain} onNext={next} />}
       {step === 7 && domain && <StepMailbox domain={domain} onNext={next} />}
@@ -188,8 +203,18 @@ function StepCard({
 }
 
 /* step 1: system check */
-function StepChecks({ status, onNext }: { status: SetupStatus; onNext: () => void }) {
-  const allOk = status.checks.every((c) => c.ok);
+function StepChecks({
+  status,
+  checking,
+  onRetry,
+  onNext,
+}: {
+  status: SetupStatus;
+  checking: boolean;
+  onRetry: () => void;
+  onNext: () => void;
+}) {
+  const allOk = status.checks.every((c) => c.ok || !c.required);
   return (
     <StepCard title="System check">
       <ul className="space-y-3">
@@ -197,17 +222,25 @@ function StepChecks({ status, onNext }: { status: SetupStatus; onNext: () => voi
           <li key={c.name} className="flex items-start gap-3">
             {c.ok ? (
               <Check size={16} className="mt-0.5 text-ok" />
+            ) : !c.required ? (
+              <TriangleAlert size={16} className="mt-0.5 text-warn" />
             ) : (
               <XCircle size={16} className="mt-0.5 text-danger" />
             )}
             <div>
-              <div className="text-[13.5px] font-medium text-ink">{c.name}</div>
+              <div className="flex items-center gap-2 text-[13.5px] font-medium text-ink">
+                {c.name}
+                {!c.required && <span className="text-[11px] font-medium text-faint">advisory</span>}
+              </div>
               <div className="text-[12.5px] text-faint">{c.detail}</div>
             </div>
           </li>
         ))}
       </ul>
-      <div className="mt-6 flex justify-end">
+      <div className="mt-6 flex justify-end gap-2">
+        <Button type="button" onClick={onRetry} busy={checking}>
+          <RefreshCw size={13} /> Retry checks
+        </Button>
         <Button variant="primary" onClick={onNext} disabled={!allOk}>
           {allOk ? "Begin setup" : "Fix the issues above first"} <ArrowRight size={14} />
         </Button>
@@ -323,6 +356,7 @@ function StepHost({ onNext }: { onNext: () => void }) {
         <Field label="This server's public IPv4" hint="Used for DNS checks and certificates. Find it with: curl -4 ifconfig.me">
           <Input required placeholder="203.0.113.10" value={ipv4} onChange={(e) => setIpv4(e.target.value)} />
         </Field>
+        <ReverseDnsGuide hostname={hostname} ipv4={ipv4} />
         <Field label="Certificate contact email" hint="Receives Let's Encrypt expiry warnings.">
           <Input type="email" placeholder="you@somewhere.com" value={acmeEmail} onChange={(e) => setAcmeEmail(e.target.value)} />
         </Field>
@@ -334,6 +368,29 @@ function StepHost({ onNext }: { onNext: () => void }) {
         </div>
       </form>
     </StepCard>
+  );
+}
+
+function ReverseDnsGuide({ hostname, ipv4 }: { hostname: string; ipv4: string }) {
+  const ptrHost = hostname.trim().toLowerCase() || "mail.example.com";
+  const ptrIP = ipv4.trim() || "203.0.113.10";
+  return (
+    <InfoNote>
+      <div className="font-medium text-ink">Reverse DNS (PTR)</div>
+      <ol className="mt-2 list-decimal space-y-1.5 pl-4">
+        <li>Open your VPS provider's IP or networking panel.</li>
+        <li>
+          Find <span className="text-ink">Reverse DNS</span>, <span className="text-ink">rDNS</span>, or{" "}
+          <span className="text-ink">PTR</span> for <Identifier>{ptrIP}</Identifier>.
+        </li>
+        <li>
+          Set it to <Identifier>{ptrHost}</Identifier>. This is not created at your domain DNS provider.
+        </li>
+        <li>
+          Check it later with <Identifier className="break-all leading-relaxed">dig -x {ptrIP} +short</Identifier>.
+        </li>
+      </ol>
+    </InfoNote>
   );
 }
 
@@ -382,7 +439,13 @@ function StepDomain({ onNext }: { onNext: (d: Domain) => void }) {
 }
 
 /* steps 5–6: sending method + relay config */
-function StepDelivery({ onNext }: { onNext: () => void }) {
+function StepDelivery({
+  outbound25Open,
+  onNext,
+}: {
+  outbound25Open: boolean | null;
+  onNext: () => void;
+}) {
   // Presets come from the server (delivery.Presets) so there is one source of
   // truth shared with the admin console — no hand-maintained copy here.
   const presets = useLoad(() => get<{ presets: RelayPreset[] }>("/api/setup/relay-presets"));
@@ -393,11 +456,22 @@ function StepDelivery({ onNext }: { onNext: () => void }) {
       </StepCard>
     );
   }
-  return <StepDeliveryForm presets={presets.data.presets} onNext={onNext} />;
+  return <StepDeliveryForm presets={presets.data.presets} outbound25Open={outbound25Open} onNext={onNext} />;
 }
 
-function StepDeliveryForm({ presets, onNext }: { presets: RelayPreset[]; onNext: () => void }) {
-  const [mode, setMode] = useState<"direct" | "relay">("direct");
+function StepDeliveryForm({
+  presets,
+  outbound25Open,
+  onNext,
+}: {
+  presets: RelayPreset[];
+  outbound25Open: boolean | null;
+  onNext: () => void;
+}) {
+  const outbound25Blocked = outbound25Open === false;
+  const directBlockedMessage =
+    "Outbound port 25 is not available on this server. Choose SMTP relay instead.";
+  const [mode, setMode] = useState<"direct" | "relay">(outbound25Blocked ? "relay" : "direct");
   const [provider, setProvider] = useState(presets[0]?.provider ?? "custom");
   const preset = useMemo(
     () => presets.find((p) => p.provider === provider) ?? presets[0],
@@ -410,6 +484,10 @@ function StepDeliveryForm({ presets, onNext }: { presets: RelayPreset[]; onNext:
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    if (outbound25Blocked) setMode("relay");
+  }, [outbound25Blocked]);
+
   function pick(p: string) {
     setProvider(p);
     const pr = presets.find((x) => x.provider === p)!;
@@ -419,6 +497,10 @@ function StepDeliveryForm({ presets, onNext }: { presets: RelayPreset[]; onNext:
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (mode === "direct" && outbound25Blocked) {
+      setError(directBlockedMessage);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -447,20 +529,45 @@ function StepDeliveryForm({ presets, onNext }: { presets: RelayPreset[]; onNext:
   return (
     <StepCard title="How should mail leave this server?">
       <form onSubmit={submit} className="space-y-4">
+        {outbound25Blocked && (
+          <InfoNote>
+            Outbound port 25 looks blocked on this server. Relay mode is selected so sending still works.
+          </InfoNote>
+        )}
         <div className="grid gap-3 sm:grid-cols-2">
           <ModeCard
             active={mode === "direct"}
-            onClick={() => setMode("direct")}
+            onClick={() => {
+              if (outbound25Blocked) {
+                setError(directBlockedMessage);
+                return;
+              }
+              setError("");
+              setMode("direct");
+            }}
             title="Direct"
-            body="Requires a clean IP and PTR record."
+            body={
+              outbound25Blocked
+                ? "Outbound port 25 is blocked; use only if your provider opens it."
+                : "Requires outbound port 25, PTR, and a clean IP."
+            }
           />
           <ModeCard
             active={mode === "relay"}
-            onClick={() => setMode("relay")}
+            onClick={() => {
+              setError("");
+              setMode("relay");
+            }}
             title="Through a relay"
             body="Use SES, Postmark, Mailgun, SMTP2GO, Resend, or custom SMTP."
           />
         </div>
+        {mode === "direct" && !outbound25Blocked && (
+          <InfoNote>
+            Direct sending needs reverse DNS (PTR) to point your server IP back to the mail hostname. If your VPS
+            provider cannot set it, choose relay.
+          </InfoNote>
+        )}
 
         {mode === "relay" && (
           <div className="space-y-4 rounded-xl border border-line bg-inset/60 p-4">

@@ -28,7 +28,7 @@ CREATE TABLE mailboxes (
     two_factor_enabled INTEGER NOT NULL DEFAULT 0,
     encrypted_totp_secret TEXT NOT NULL DEFAULT '',
     encrypted_passkey_password TEXT NOT NULL DEFAULT '',
-    quota_mb      INTEGER NOT NULL DEFAULT 1024,
+    quota_mb      INTEGER NOT NULL DEFAULT 0,
     enabled       INTEGER NOT NULL DEFAULT 1,
     created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     updated_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
@@ -81,7 +81,7 @@ INSERT INTO outbound_policies (scope_type, scope_id, mode) VALUES ('global', 0, 
 
 CREATE TABLE certificates (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    domain_id       INTEGER NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+    domain_id       INTEGER REFERENCES domains(id) ON DELETE CASCADE,
     hostname        TEXT    NOT NULL UNIQUE COLLATE NOCASE,
     status          TEXT    NOT NULL DEFAULT 'pending',
     challenge_type  TEXT    NOT NULL DEFAULT 'http-01',

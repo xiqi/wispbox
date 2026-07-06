@@ -81,35 +81,42 @@ func (h *Handlers) status(w http.ResponseWriter, r *http.Request) {
 	mailboxes, _ := h.Core.Store.ListMailboxes(ctx, 0)
 	hostname := h.Core.Store.GetSettingDefault(ctx, "primary_hostname", "")
 
-	checks := []map[string]any{
-		{"name": "Database", "ok": true, "detail": "SQLite control database is writable"},
-		{"name": "Mode", "ok": true, "detail": string(h.Cfg.Mode) + " mode"},
+	checks := []setupCheck{
+		{Name: "Database", OK: true, Detail: "SQLite control database is writable", Required: true},
+		{Name: "Mode", OK: true, Detail: string(h.Cfg.Mode) + " mode", Required: true},
 	}
 	if h.Cfg.IsDev() {
-		checks = append(checks, map[string]any{
-			"name": "Mail services", "ok": true,
-			"detail": "development mode: Postfix and Dovecot are mocked",
+		checks = append(checks, setupCheck{
+			Name:     "Mail services",
+			OK:       true,
+			Detail:   "development mode: Postfix and Dovecot are mocked",
+			Required: true,
 		})
 	} else {
 		for _, svc := range []string{"postfix", "dovecot"} {
 			ok := binaryExists(svc)
-			checks = append(checks, map[string]any{
-				"name": svc, "ok": ok,
-				"detail": map[bool]string{true: svc + " is installed", false: svc + " not found — run the wispbox installer"}[ok],
+			checks = append(checks, setupCheck{
+				Name:     svc,
+				OK:       ok,
+				Detail:   map[bool]string{true: svc + " is installed", false: svc + " not found — run the wispbox installer"}[ok],
+				Required: true,
 			})
 		}
 	}
+	portChecks, outbound25Open := setupPortChecks(ctx, h.Cfg)
+	checks = append(checks, portChecks...)
 
 	httpjson.Write(w, http.StatusOK, map[string]any{
-		"initialized":      false,
-		"has_admin":        adminCount > 0,
-		"primary_hostname": hostname,
-		"server_ipv4":      h.Core.Store.GetSettingDefault(ctx, "server_ipv4", ""),
-		"domains":          domains,
-		"mailbox_count":    len(mailboxes),
-		"checks":           checks,
-		"authenticated":    h.Sessions.Resolve(r, db.UserAdmin) != nil,
-		"csrf":             h.Sessions.CSRFForRequest(r, db.UserAdmin),
+		"initialized":           false,
+		"has_admin":             adminCount > 0,
+		"primary_hostname":      hostname,
+		"server_ipv4":           h.Core.Store.GetSettingDefault(ctx, "server_ipv4", ""),
+		"domains":               domains,
+		"mailbox_count":         len(mailboxes),
+		"checks":                checks,
+		"outbound_smtp_25_open": outbound25Open,
+		"authenticated":         h.Sessions.Resolve(r, db.UserAdmin) != nil,
+		"csrf":                  h.Sessions.CSRFForRequest(r, db.UserAdmin),
 	})
 }
 
@@ -266,7 +273,7 @@ func (h *Handlers) configureDelivery(w http.ResponseWriter, r *http.Request) {
 		}
 		relayID = &relay.ID
 	}
-	if _, err := h.Core.Engine.SetPolicy(r.Context(), db.ScopeGlobal, 0, req.Mode, relayID); err != nil {
+	if _, _, err := h.Core.UpsertPolicy(r.Context(), db.ScopeGlobal, 0, req.Mode, relayID); err != nil {
 		httpjson.Fail(w, err)
 		return
 	}

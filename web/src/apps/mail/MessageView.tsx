@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
-  CornerUpLeft,
-  CornerUpRight,
   Download,
   FolderInput,
+  Forward,
   ImageOff,
   MailOpen,
   Paperclip,
+  Reply,
+  ReplyAll,
   Trash2,
 } from "lucide-react";
 import { get, post } from "../../lib/api";
@@ -101,21 +102,24 @@ export default function MessageView({
           <>
             <IconAction
               title="Reply"
+              emphasis
               onClick={() => onCompose({ mode: "reply", original: msg })}
             >
-              <CornerUpLeft size={15} />
+              <Reply size={16} />
             </IconAction>
             <IconAction
               title="Reply all"
+              emphasis
               onClick={() => onCompose({ mode: "reply_all", original: msg })}
             >
-              <CornerUpLeft size={15} className="-scale-x-100" />
+              <ReplyAll size={16} />
             </IconAction>
             <IconAction
               title="Forward"
+              emphasis
               onClick={() => onCompose({ mode: "forward", original: msg })}
             >
-              <CornerUpRight size={15} />
+              <Forward size={16} />
             </IconAction>
             <span className="mx-1 h-5 w-px bg-line" />
             <IconAction
@@ -265,19 +269,23 @@ function IconAction({
   title,
   onClick,
   danger,
+  emphasis,
   children,
 }: {
   title: string;
   onClick: () => void;
   danger?: boolean;
+  emphasis?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <IconButton
       title={title}
+      aria-label={title}
       onClick={onClick}
       tone={danger ? "danger" : "default"}
       size="md"
+      className={emphasis ? "!text-muted hover:!text-ink" : ""}
       icon={children}
     />
   );

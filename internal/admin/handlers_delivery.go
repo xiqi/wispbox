@@ -166,7 +166,11 @@ func (h *Handlers) listPolicies(w http.ResponseWriter, r *http.Request, _ *admin
 			resolvedGlobal["relay_name"] = global.Relay.Name
 		}
 	}
-	httpjson.Write(w, http.StatusOK, map[string]any{"policies": policies, "effective_global": resolvedGlobal})
+	httpjson.Write(w, http.StatusOK, map[string]any{
+		"policies":              policies,
+		"effective_global":      resolvedGlobal,
+		"outbound_smtp_25_open": h.Core.OutboundSMTP25Status(r.Context()),
+	})
 }
 
 func (h *Handlers) upsertPolicy(w http.ResponseWriter, r *http.Request, ac *adminCtx) {
@@ -273,9 +277,14 @@ func (t *SMTPTestMailer) SendTest(ctx context.Context, from, to, subject, body s
 	return sendmailInject(ctx, t.SendmailPath, from, to, subject, body)
 }
 
-// MockTestMailer is the development adapter: always succeeds, records nothing.
+// MockTestMailer is the development adapter: always succeeds and records the
+// last test message for API tests.
 type MockTestMailer struct {
-	Fail bool
+	Fail        bool
+	LastFrom    string
+	LastTo      string
+	LastSubject string
+	LastBody    string
 }
 
 func (t *MockTestMailer) TestRelay(context.Context, *db.OutboundRelay, string) error {
@@ -285,9 +294,13 @@ func (t *MockTestMailer) TestRelay(context.Context, *db.OutboundRelay, string) e
 	return nil
 }
 
-func (t *MockTestMailer) SendTest(context.Context, string, string, string, string) error {
+func (t *MockTestMailer) SendTest(_ context.Context, from, to, subject, body string) error {
 	if t.Fail {
 		return fmt.Errorf("simulated send failure (dev mode)")
 	}
+	t.LastFrom = from
+	t.LastTo = to
+	t.LastSubject = subject
+	t.LastBody = body
 	return nil
 }

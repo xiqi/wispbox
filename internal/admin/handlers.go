@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -24,6 +25,8 @@ type Handlers struct {
 	Logs         services.LogReader
 	TestMailer   TestMailer
 	StartedAt    time.Time
+
+	LatestVersion func(ctx context.Context) (string, error)
 }
 
 // Mount registers all /api/admin routes.
@@ -76,6 +79,7 @@ func (h *Handlers) Mount(mux *http.ServeMux) {
 	mux.Handle("POST /api/admin/dns/{domainID}/check", h.authed(h.dnsCheck))
 
 	mux.Handle("GET /api/admin/certificates", h.authed(h.listCertificates))
+	mux.Handle("POST /api/admin/certificates/admin/issue", h.authed(h.issueAdminCertificate))
 	mux.Handle("POST /api/admin/certificates/{id}/renew", h.authed(h.renewCertificate))
 
 	mux.Handle("GET /api/admin/queue", h.authed(h.queue))

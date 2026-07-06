@@ -17,6 +17,7 @@ export default function MessageList({
   nextCursor,
   onLoadMore,
   onRefresh,
+  refreshing,
   hidden,
 }: {
   folder: string;
@@ -32,6 +33,7 @@ export default function MessageList({
   nextCursor?: string;
   onLoadMore: () => void;
   onRefresh: () => void;
+  refreshing: boolean;
   hidden: boolean;
 }) {
   return (
@@ -56,10 +58,13 @@ export default function MessageList({
           />
         </div>
         <IconButton
+          aria-label="Refresh messages"
+          disabled={busy || refreshing}
           onClick={onRefresh}
-          title="Refresh"
+          title="Refresh messages"
           size="md"
-          icon={<RefreshCw size={14} className={busy ? "animate-spin" : ""} />}
+          className="active:scale-95"
+          icon={<RefreshCw size={14} className={busy || refreshing ? "animate-spin" : ""} />}
         />
       </header>
 

@@ -51,6 +51,22 @@ func TestCreateCertificate(t *testing.T) {
 	}
 }
 
+func TestCreateStandaloneCertificate(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	c, err := st.CreateCertificate(ctx, 0, "Admin.Example.COM")
+	if err != nil {
+		t.Fatalf("CreateCertificate without domain: %v", err)
+	}
+	if c.DomainID != 0 {
+		t.Errorf("DomainID = %d, want 0 for standalone certificate", c.DomainID)
+	}
+	if c.Hostname != "admin.example.com" {
+		t.Errorf("Hostname = %q, want admin.example.com", c.Hostname)
+	}
+}
+
 func TestCertificateStateTransitions(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)

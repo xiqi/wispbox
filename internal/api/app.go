@@ -22,6 +22,7 @@ import (
 	"github.com/xiqi/wispbox/internal/dnscheck"
 	"github.com/xiqi/wispbox/internal/imapclient"
 	"github.com/xiqi/wispbox/internal/mailapi"
+	"github.com/xiqi/wispbox/internal/netcheck"
 	"github.com/xiqi/wispbox/internal/security"
 	"github.com/xiqi/wispbox/internal/services"
 	"github.com/xiqi/wispbox/internal/setup"
@@ -185,6 +186,7 @@ func NewApp(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*App,
 	core := &admin.Core{
 		Cfg: cfg, Store: store, Engine: app.Engine, Generator: app.Generator,
 		Certs: app.CertManager, Checker: app.Checker, Secret: secret, Log: logger,
+		OutboundSMTP25Open: netcheck.OutboundSMTP25Open,
 	}
 	app.CertManager.ServerIPs = core.ServerIPs
 	// After a certificate is issued, regenerate the mail config so the new
@@ -250,7 +252,7 @@ func (a *App) SeedDev(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if _, _, err := core.CreateMailbox(ctx, dom.ID, devSeedMailboxLocal, devSeedMailboxPass, 2048); err != nil {
+	if _, _, err := core.CreateMailbox(ctx, dom.ID, devSeedMailboxLocal, devSeedMailboxPass, 0); err != nil {
 		return err
 	}
 	if mock, ok := a.Resolver.(*dnscheck.MockResolver); ok {

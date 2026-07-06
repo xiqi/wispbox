@@ -49,7 +49,7 @@ func TestRequiredRecordsDirect(t *testing.T) {
 		{"a", "A", "mail.example.com", "192.0.2.10"},
 		{"mx", "MX", "example.com", "10 mail.example.com"},
 		{"spf", "TXT", "example.com", "v=spf1 mx ~all"},
-		{"dmarc", "TXT", "_dmarc.example.com", "v=DMARC1; p=quarantine; rua=mailto:postmaster@example.com"},
+		{"dmarc", "TXT", "_dmarc.example.com", "v=DMARC1; p=none; rua=mailto:postmaster@example.com"},
 	}
 	for _, c := range checks {
 		r := recordByPurpose(t, recs, c.purpose)
@@ -247,7 +247,7 @@ func TestCheckerCheck(t *testing.T) {
 			name:    "dmarc ok",
 			purpose: "dmarc",
 			seed: func(m *MockResolver) {
-				m.TXT["_dmarc.example.com"] = []string{"v=DMARC1; p=quarantine; rua=mailto:postmaster@example.com"}
+				m.TXT["_dmarc.example.com"] = []string{"v=DMARC1; p=none; rua=mailto:postmaster@example.com"}
 			},
 			wantStatus: StatusOK,
 		},

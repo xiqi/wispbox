@@ -135,7 +135,7 @@ export function IconButton({
   return (
     <button
       type={type}
-      className={`inline-flex shrink-0 items-center justify-center transition-all ${sizes} ${tones} ${reveal} ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center transition-all disabled:pointer-events-none disabled:opacity-45 ${sizes} ${tones} ${reveal} ${className}`}
       {...rest}
     >
       {icon}

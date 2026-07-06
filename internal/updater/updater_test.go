@@ -39,3 +39,12 @@ func TestReadStatusAndTail(t *testing.T) {
 		t.Fatalf("LogTail = %v, want [two three]", got)
 	}
 }
+
+func TestSameVersionNormalizesReleaseTags(t *testing.T) {
+	if !SameVersion("0.1.0", "v0.1.0") {
+		t.Fatal("SameVersion(0.1.0, v0.1.0) = false, want true")
+	}
+	if SameVersion("0.1.0-dev", "v0.1.0") {
+		t.Fatal("SameVersion(0.1.0-dev, v0.1.0) = true, want false")
+	}
+}

@@ -153,7 +153,7 @@ export default function Mailboxes() {
 
 function QuotaEditor({ mailbox, onSaved }: { mailbox: Mailbox; onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(String(mailbox.quota_mb));
+  const [value, setValue] = useState(mailbox.quota_mb > 0 ? String(mailbox.quota_mb) : "");
   if (!editing) {
     return (
       <button
@@ -171,7 +171,7 @@ function QuotaEditor({ mailbox, onSaved }: { mailbox: Mailbox; onSaved: () => vo
       onSubmit={async (e) => {
         e.preventDefault();
         try {
-          await patch(`/api/admin/mailboxes/${mailbox.id}`, { quota_mb: Number(value) });
+          await patch(`/api/admin/mailboxes/${mailbox.id}`, { quota_mb: value ? Number(value) : 0 });
           toast("Quota updated");
           setEditing(false);
           onSaved();
@@ -183,6 +183,7 @@ function QuotaEditor({ mailbox, onSaved }: { mailbox: Mailbox; onSaved: () => vo
       <input
         autoFocus
         className="h-7 w-20 rounded-md border border-line bg-inset px-2 text-[12.5px] text-ink focus:outline-none"
+        placeholder="No quota"
         value={value}
         onChange={(e) => setValue(e.target.value.replace(/\D/g, ""))}
         onBlur={() => setEditing(false)}
@@ -204,7 +205,7 @@ function CreateMailbox({
   const [domainID, setDomainID] = useState(domains[0]?.id ?? 0);
   const [localPart, setLocalPart] = useState("");
   const [password, setPassword] = useState("");
-  const [quota, setQuota] = useState("1024");
+  const [quota, setQuota] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const domain = domains.find((d) => d.id === domainID);
@@ -218,7 +219,7 @@ function CreateMailbox({
         domain_id: domainID,
         local_part: localPart.trim().toLowerCase(),
         password,
-        quota_mb: Number(quota) || 1024,
+        quota_mb: quota ? Number(quota) : 0,
       });
       toast(res.warning || `${localPart}@${domain?.name} created`);
       onDone();
@@ -262,8 +263,12 @@ function CreateMailbox({
             onChange={(e) => setPassword(e.target.value)}
           />
         </Field>
-        <Field label="Quota (MB)">
-          <Input value={quota} onChange={(e) => setQuota(e.target.value.replace(/\D/g, ""))} />
+        <Field label="Quota (MB)" hint="Leave empty for no quota.">
+          <Input
+            value={quota}
+            placeholder="No quota"
+            onChange={(e) => setQuota(e.target.value.replace(/\D/g, ""))}
+          />
         </Field>
         <ErrorNote>{error}</ErrorNote>
         <div className="flex justify-end gap-2">

@@ -110,6 +110,14 @@ func TestMigrateCreatesAllTables(t *testing.T) {
 	if usernameColumns != 1 || emailColumns != 0 {
 		t.Fatalf("admin columns username=%d email=%d, want username=1 email=0", usernameColumns, emailColumns)
 	}
+	var quotaDefault string
+	if err := sqldb.QueryRowContext(ctx,
+		`SELECT dflt_value FROM pragma_table_info('mailboxes') WHERE name = 'quota_mb'`).Scan(&quotaDefault); err != nil {
+		t.Fatalf("query mailbox quota default: %v", err)
+	}
+	if quotaDefault != "0" {
+		t.Fatalf("mailbox quota default = %q, want 0", quotaDefault)
+	}
 }
 
 func TestMigrateSeedsGlobalPolicyAndSettings(t *testing.T) {
