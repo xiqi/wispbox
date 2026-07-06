@@ -66,16 +66,16 @@ export default function Domains() {
                     <Identifier muted>{d.mail_hostname}</Identifier>
                   </Td>
                   <Td>
-                    <StatusPill status={d.status} label={d.status === "active" ? "ok" : d.status} />
+                    <StatusPill status={d.status} />
                   </Td>
                   <Td>
                     <StatusPill status={d.cert_status ?? "none"} />
                   </Td>
                   <Td className="tabular-nums text-muted">{d.mailbox_count}</Td>
                   <Td className="text-muted">
-                    {d.delivery_mode}
+                    {formatDeliveryMode(d.delivery_mode)}
                     {d.delivery_source === "domain" && (
-                      <span className="ml-1 text-[10.5px] uppercase text-faint">override</span>
+                      <span className="ml-1 text-[10.5px] font-medium text-faint">Override</span>
                     )}
                   </Td>
                   <Td className="text-right">
@@ -113,6 +113,13 @@ export default function Domains() {
       )}
     </div>
   );
+}
+
+function formatDeliveryMode(mode?: string): string {
+  if (mode === "relay") return "Relay";
+  if (mode === "direct") return "Direct";
+  if (mode === "inherit") return "Inherit";
+  return mode ? mode[0].toUpperCase() + mode.slice(1) : "—";
 }
 
 function AddDomain({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {

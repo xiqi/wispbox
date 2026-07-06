@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/xiqi/wispbox/internal/cli"
+	"github.com/xiqi/wispbox/internal/lowmem"
 )
 
 const usage = `wispboxd — the wispbox mail server daemon
@@ -32,6 +33,7 @@ Common flags (after the subcommand):
 `
 
 func main() {
+	lowmem.ApplyDefaults()
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)

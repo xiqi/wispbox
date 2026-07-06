@@ -90,6 +90,13 @@ func TestDomainLookupUpdateDelete(t *testing.T) {
 	if len(list) != 2 || list[0].Name != "aaa.example.net" || list[1].Name != "example.com" {
 		t.Errorf("ListDomains = %+v, want 2 domains ordered by name", list)
 	}
+	n, err := st.CountDomains(ctx)
+	if err != nil {
+		t.Fatalf("CountDomains: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("CountDomains = %d, want 2", n)
+	}
 
 	if err := st.UpdateDomainStatus(ctx, dom.ID, DomainActive); err != nil {
 		t.Fatalf("UpdateDomainStatus: %v", err)
@@ -232,6 +239,13 @@ func TestMailboxLookupUpdateDelete(t *testing.T) {
 	}
 	if n != 1 {
 		t.Errorf("CountMailboxes = %d, want 1", n)
+	}
+	n, err = st.CountMailboxes(ctx, 0)
+	if err != nil {
+		t.Fatalf("CountMailboxes(all): %v", err)
+	}
+	if n != 2 {
+		t.Errorf("CountMailboxes(all) = %d, want 2", n)
 	}
 
 	if err := st.UpdateMailbox(ctx, mb.ID, 2048, false); err != nil {
@@ -400,6 +414,20 @@ func TestAliasListAndDelete(t *testing.T) {
 	}
 	if len(scoped) != 1 || scoped[0].ID != a.ID {
 		t.Errorf("ListAliases(domain) = %+v, want only %d", scoped, a.ID)
+	}
+	n, err := st.CountAliases(ctx, 0)
+	if err != nil {
+		t.Fatalf("CountAliases(0): %v", err)
+	}
+	if n != 2 {
+		t.Errorf("CountAliases(0) = %d, want 2", n)
+	}
+	n, err = st.CountAliases(ctx, dom.ID)
+	if err != nil {
+		t.Fatalf("CountAliases(domain): %v", err)
+	}
+	if n != 1 {
+		t.Errorf("CountAliases(domain) = %d, want 1", n)
 	}
 
 	got, err := st.GetAlias(ctx, a.ID)

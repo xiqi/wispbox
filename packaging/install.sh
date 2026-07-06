@@ -302,10 +302,10 @@ tune_low_memory_host() {
     }
 
     say "applying low-memory service limits"
-    write_service_limit postfix.service 96M 128M 80
-    write_service_limit postfix@.service 96M 128M 80
-    write_service_limit dovecot.service 96M 128M 80
-    write_service_limit opendkim.service 32M 48M 16
+    write_service_limit postfix.service 64M 96M 64
+    write_service_limit postfix@.service 64M 96M 64
+    write_service_limit dovecot.service 64M 96M 64
+    write_service_limit opendkim.service 24M 40M 16
 
     # fwupd-refresh can briefly allocate hundreds of MiB while refreshing
     # metadata. It is useful on laptops and hardware hosts, but a dedicated

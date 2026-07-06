@@ -5,9 +5,11 @@
 package smtpclient
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/smtp"
 	"strings"
@@ -21,6 +23,12 @@ import (
 // Sender submits one raw RFC 5322 message.
 type Sender interface {
 	Send(ctx context.Context, creds auth.Credentials, from string, to []string, raw []byte) error
+}
+
+// ReaderSender submits a message without requiring the caller to hold the
+// whole RFC 5322 payload in memory.
+type ReaderSender interface {
+	SendReader(ctx context.Context, creds auth.Credentials, from string, to []string, raw io.Reader) error
 }
 
 // ---- production: Postfix submission on loopback ----
@@ -37,6 +45,10 @@ func NewSubmission(addr, heloName string) *Submission {
 }
 
 func (s *Submission) Send(ctx context.Context, creds auth.Credentials, from string, to []string, raw []byte) error {
+	return s.SendReader(ctx, creds, from, to, bytes.NewReader(raw))
+}
+
+func (s *Submission) SendReader(ctx context.Context, creds auth.Credentials, from string, to []string, raw io.Reader) error {
 	d := net.Dialer{Timeout: 15 * time.Second}
 	conn, err := d.DialContext(ctx, "tcp", s.Addr)
 	if err != nil {
@@ -79,7 +91,7 @@ func (s *Submission) Send(ctx context.Context, creds auth.Credentials, from stri
 	if err != nil {
 		return humanSMTPError(err)
 	}
-	if _, err := w.Write(raw); err != nil {
+	if _, err := io.Copy(w, raw); err != nil {
 		return err
 	}
 	if err := w.Close(); err != nil {
@@ -139,6 +151,14 @@ func (m *MockSender) Send(_ context.Context, _ auth.Credentials, from string, to
 		}
 	}
 	return nil
+}
+
+func (m *MockSender) SendReader(ctx context.Context, creds auth.Credentials, from string, to []string, raw io.Reader) error {
+	data, err := io.ReadAll(raw)
+	if err != nil {
+		return err
+	}
+	return m.Send(ctx, creds, from, to, data)
 }
 
 // SentCount reports how many messages were captured (tests).

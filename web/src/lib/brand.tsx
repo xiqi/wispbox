@@ -20,6 +20,7 @@ type BrandContextValue = Brand & {
 };
 
 const defaultBrand: Brand = { name: "wispbox", logo: "" };
+const domainBrandPrefix = "brand_domain:";
 
 const BrandContext = createContext<BrandContextValue>({
   ...defaultBrand,
@@ -62,9 +63,22 @@ export function useBrand() {
   return useContext(BrandContext);
 }
 
-export function brandFromSettings(settings: Record<string, string>): Brand {
+export function brandSettingKeys(domain = "") {
+  const cleanDomain = domain.trim().toLowerCase();
+  if (!cleanDomain) {
+    return { name: "brand_name", logo: "brand_logo" };
+  }
+  return {
+    name: `${domainBrandPrefix}${cleanDomain}:brand_name`,
+    logo: `${domainBrandPrefix}${cleanDomain}:brand_logo`,
+  };
+}
+
+export function brandFromSettings(settings: Record<string, string>, domain = ""): Brand {
+  const keys = brandSettingKeys(domain);
+  const globalKeys = brandSettingKeys();
   return cleanBrand({
-    name: settings.brand_name,
-    logo: settings.brand_logo,
+    name: settings[keys.name] || settings[globalKeys.name],
+    logo: settings[keys.logo] || settings[globalKeys.logo],
   });
 }

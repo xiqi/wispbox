@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/xiqi/wispbox/internal/cli"
+	"github.com/xiqi/wispbox/internal/lowmem"
 )
 
 const usage = `wispboxctl — wispbox operations tool
@@ -31,6 +32,7 @@ Common flags:
 `
 
 func main() {
+	lowmem.ApplyDefaults()
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)

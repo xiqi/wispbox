@@ -331,6 +331,60 @@ func TestCSRFRequiredOnAdminMutations(t *testing.T) {
 	}
 }
 
+func TestDomainAppearanceOverridesBrandByHost(t *testing.T) {
+	_, srv := newTestServer(t, true)
+	c := newClient(t, srv)
+	c.loginAdmin(seedAdminUsername, seedAdminPassword)
+
+	status, body := c.post("/api/admin/domains", map[string]any{"name": "brand.example"})
+	if status != http.StatusCreated {
+		t.Fatalf("create domain: status = %d, want 201 (body %v)", status, body)
+	}
+
+	key := "brand_domain:brand.example:brand_name"
+	status, body = c.patch("/api/admin/settings", map[string]any{key: "Brand Mail"})
+	if status != http.StatusOK {
+		t.Fatalf("patch domain brand: status = %d, want 200 (body %v)", status, body)
+	}
+	settings := obj(t, body, "settings")
+	if got := str(t, settings, key); got != "Brand Mail" {
+		t.Fatalf("settings[%q] = %q, want Brand Mail", key, got)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, c.base+"/api/brand", nil)
+	if err != nil {
+		t.Fatalf("NewRequest /api/brand: %v", err)
+	}
+	req.Host = "mail.brand.example"
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/brand: %v", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read /api/brand: %v", err)
+	}
+	var brandBody map[string]any
+	if err := json.Unmarshal(raw, &brandBody); err != nil {
+		t.Fatalf("decode /api/brand %q: %v", raw, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("/api/brand status = %d, want 200 (body %v)", resp.StatusCode, brandBody)
+	}
+	brand := obj(t, brandBody, "brand")
+	if got := str(t, brand, "name"); got != "Brand Mail" {
+		t.Fatalf("brand.name = %q, want Brand Mail", got)
+	}
+
+	status, body = c.patch("/api/admin/settings", map[string]any{
+		"brand_domain:missing.example:brand_name": "Missing",
+	})
+	if status != http.StatusBadRequest {
+		t.Fatalf("patch missing domain brand: status = %d, want 400 (body %v)", status, body)
+	}
+}
+
 func TestDirectDeliveryRequiresOutbound25(t *testing.T) {
 	app, srv := newTestServer(t, true)
 	app.Cfg.Mode = config.ModeProduction

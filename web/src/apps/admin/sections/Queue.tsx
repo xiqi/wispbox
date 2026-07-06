@@ -100,7 +100,7 @@ export default function Queue() {
               head={
                 <>
                   <Th>Queue ID</Th>
-                  <Th>From → To</Th>
+                  <Th>Sender and recipients</Th>
                   <Th>State</Th>
                   <Th>Size</Th>
                   <Th>Arrived</Th>

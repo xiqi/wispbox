@@ -1,8 +1,10 @@
 package imapclient
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"time"
@@ -370,6 +372,10 @@ func (d *Dovecot) SetSeen(ctx context.Context, creds auth.Credentials, folder st
 }
 
 func (d *Dovecot) Append(ctx context.Context, creds auth.Credentials, folder string, raw []byte, seen bool) error {
+	return d.AppendReader(ctx, creds, folder, int64(len(raw)), bytes.NewReader(raw), seen)
+}
+
+func (d *Dovecot) AppendReader(ctx context.Context, creds auth.Credentials, folder string, size int64, raw io.Reader, seen bool) error {
 	c, err := d.dial(creds)
 	if err != nil {
 		return err
@@ -379,8 +385,8 @@ func (d *Dovecot) Append(ctx context.Context, creds auth.Credentials, folder str
 	if seen {
 		opts.Flags = []imap.Flag{imap.FlagSeen}
 	}
-	cmd := c.Append(folder, int64(len(raw)), opts)
-	if _, err := cmd.Write(raw); err != nil {
+	cmd := c.Append(folder, size, opts)
+	if _, err := io.Copy(cmd, raw); err != nil {
 		return fmt.Errorf("append message: %w", err)
 	}
 	if err := cmd.Close(); err != nil {

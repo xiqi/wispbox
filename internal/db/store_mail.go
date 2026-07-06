@@ -75,6 +75,12 @@ func (s *Store) ListDomains(ctx context.Context) ([]Domain, error) {
 	return out, rows.Err()
 }
 
+func (s *Store) CountDomains(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM domains`).Scan(&n)
+	return n, err
+}
+
 func (s *Store) UpdateDomainStatus(ctx context.Context, id int64, status DomainStatus) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE domains SET status = ?, updated_at = ? WHERE id = ?`, string(status), NowString(), id)
@@ -94,7 +100,13 @@ func (s *Store) DeleteDomain(ctx context.Context, id int64) error {
 
 func (s *Store) CountMailboxes(ctx context.Context, domainID int64) (int, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM mailboxes WHERE domain_id = ?`, domainID).Scan(&n)
+	q := `SELECT COUNT(*) FROM mailboxes`
+	args := []any{}
+	if domainID > 0 {
+		q = `SELECT COUNT(*) FROM mailboxes WHERE domain_id = ?`
+		args = append(args, domainID)
+	}
+	err := s.db.QueryRowContext(ctx, q, args...).Scan(&n)
 	return n, err
 }
 
@@ -300,6 +312,18 @@ func (s *Store) ListAliases(ctx context.Context, domainID int64) ([]Alias, error
 		out = append(out, *a)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) CountAliases(ctx context.Context, domainID int64) (int, error) {
+	var n int
+	q := `SELECT COUNT(*) FROM aliases`
+	args := []any{}
+	if domainID > 0 {
+		q = `SELECT COUNT(*) FROM aliases WHERE domain_id = ?`
+		args = append(args, domainID)
+	}
+	err := s.db.QueryRowContext(ctx, q, args...).Scan(&n)
+	return n, err
 }
 
 // ListAliasSourcesForDestination returns enabled alias sources that deliver

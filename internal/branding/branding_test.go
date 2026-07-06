@@ -30,6 +30,42 @@ func TestCurrentDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
+func TestCurrentForHostUsesDomainOverride(t *testing.T) {
+	ctx := context.Background()
+	store := fakeStore{
+		SettingName:                          "Global Mail",
+		SettingLogo:                          "data:image/png;base64,global",
+		DomainSettingName("example.com"):     "Example Mail",
+		DomainSettingLogo("startup.example"): "data:image/png;base64,startup",
+	}
+
+	got := CurrentForHost(ctx, store, "mail.example.com:443")
+	if got.Name != "Example Mail" {
+		t.Errorf("Name = %q, want Example Mail", got.Name)
+	}
+	if got.Logo != "data:image/png;base64,global" {
+		t.Errorf("Logo = %q, want inherited global logo", got.Logo)
+	}
+
+	got = CurrentForHost(ctx, store, "startup.example")
+	if got.Name != "Global Mail" {
+		t.Errorf("Name = %q, want inherited global name", got.Name)
+	}
+	if got.Logo != "data:image/png;base64,startup" {
+		t.Errorf("Logo = %q, want startup logo", got.Logo)
+	}
+}
+
+func TestParseDomainSettingKey(t *testing.T) {
+	domain, setting, ok := ParseDomainSettingKey("brand_domain:Example.COM.:brand_name")
+	if !ok || domain != "example.com" || setting != SettingName {
+		t.Fatalf("ParseDomainSettingKey = %q, %q, %v", domain, setting, ok)
+	}
+	if _, _, ok := ParseDomainSettingKey("brand_domain:example.com:acme_email"); ok {
+		t.Fatal("non-brand domain setting accepted")
+	}
+}
+
 func TestValidateName(t *testing.T) {
 	if err := ValidateName(""); err != nil {
 		t.Fatalf("empty name should reset to default: %v", err)

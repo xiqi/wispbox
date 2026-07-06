@@ -98,7 +98,7 @@ export default function Mailboxes() {
                           toast(e.message, "error");
                         }
                       }}
-                      label={m.enabled ? "enabled" : "disabled"}
+                      label={m.enabled ? "Enabled" : "Disabled"}
                     />
                   </Td>
                   <Td>

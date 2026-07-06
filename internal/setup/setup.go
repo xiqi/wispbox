@@ -78,7 +78,7 @@ func (h *Handlers) status(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	adminCount, _ := h.Core.Store.CountAdmins(ctx)
 	domains, _ := h.Core.Store.ListDomains(ctx)
-	mailboxes, _ := h.Core.Store.ListMailboxes(ctx, 0)
+	mailboxCount, _ := h.Core.Store.CountMailboxes(ctx, 0)
 	hostname := h.Core.Store.GetSettingDefault(ctx, "primary_hostname", "")
 
 	checks := []setupCheck{
@@ -112,7 +112,7 @@ func (h *Handlers) status(w http.ResponseWriter, r *http.Request) {
 		"primary_hostname":      hostname,
 		"server_ipv4":           h.Core.Store.GetSettingDefault(ctx, "server_ipv4", ""),
 		"domains":               domains,
-		"mailbox_count":         len(mailboxes),
+		"mailbox_count":         mailboxCount,
 		"checks":                checks,
 		"outbound_smtp_25_open": outbound25Open,
 		"authenticated":         h.Sessions.Resolve(r, db.UserAdmin) != nil,

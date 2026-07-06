@@ -34,12 +34,12 @@ export default function Certificates() {
     null;
   const adminLabel =
     !adminCert || adminCert.status === "pending"
-      ? "Issue SSL"
+      ? "Issue certificate"
       : adminCert.status === "error" || adminCert.status === "dns_wait"
-        ? "Retry SSL"
-        : "Renew SSL";
+        ? "Retry certificate"
+        : "Renew certificate";
 
-  async function issueAdminSSL() {
+  async function issueAdminCertificate() {
     setIssuingAdmin(true);
     try {
       const res = await post<{ certificate: Certificate }>("/api/admin/certificates/admin/issue");
@@ -54,7 +54,7 @@ export default function Certificates() {
             }
           : current,
       );
-      toast(`SSL request started for ${res.certificate.hostname}`);
+      toast(`Certificate request started for ${res.certificate.hostname}`);
       setTimeout(reload, 2500);
     } catch (e: any) {
       toast(e.message, "error");
@@ -70,12 +70,12 @@ export default function Certificates() {
       {data && (
         <>
           <Card
-            title="Admin SSL"
+            title="Admin certificate"
             actions={
               <Button
                 size="sm"
                 variant="primary"
-                onClick={issueAdminSSL}
+                onClick={issueAdminCertificate}
                 busy={issuingAdmin}
                 disabled={!data.primary_hostname}
               >
@@ -86,17 +86,17 @@ export default function Certificates() {
           >
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
-                <div className="text-[12px] text-faint">Hostname</div>
+                <div className="text-[12px] font-medium text-faint">Hostname</div>
                 <Identifier className="mt-2 block">{data.primary_hostname || "not set"}</Identifier>
               </div>
               <div>
-                <div className="text-[12px] text-faint">Status</div>
+                <div className="text-[12px] font-medium text-faint">Status</div>
                 <div className="mt-2">
-                  {adminCert ? <StatusPill status={adminCert.status} /> : <StatusPill status="unknown" label="not issued" />}
+                  {adminCert ? <StatusPill status={adminCert.status} /> : <StatusPill status="none" />}
                 </div>
               </div>
               <div>
-                <div className="text-[12px] text-faint">Expires</div>
+                <div className="text-[12px] font-medium text-faint">Expires</div>
                 <div className="mt-2 text-[13px] text-muted">
                   {adminCert?.not_after ? formatDate(adminCert.not_after).split(",")[0] : "—"}
                 </div>
@@ -109,82 +109,160 @@ export default function Certificates() {
             )}
           </Card>
 
-          <Card title="Certificates">
+          <Card title="Tracked certificates">
             {data.certificates.length === 0 ? (
               <EmptyState title="No certificates tracked" />
             ) : (
-              <Table
-                head={
-                  <>
-                    <Th>Hostname</Th>
-                    <Th>Status</Th>
-                    <Th>Issuer</Th>
-                    <Th>Expires</Th>
-                    <Th>Auto-renew</Th>
-                    <Th />
-                  </>
-                }
-              >
-                {data.certificates.map((c) => {
-                  const days = daysUntil(c.not_after);
-                  return (
-                    <tr key={c.id}>
-                      <Td>
-                        <Identifier>{c.hostname}</Identifier>
-                      </Td>
-                      <Td>
-                        <StatusPill status={c.status} />
+              <>
+                <div className="divide-y divide-line md:hidden">
+                  {data.certificates.map((c) => {
+                    const days = daysUntil(c.not_after);
+                    return (
+                      <div key={c.id} className="space-y-3 py-3 first:pt-0 last:pb-0">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <Identifier>{c.hostname}</Identifier>
+                          <StatusPill status={c.status} />
+                        </div>
                         {c.last_error && (
-                          <div className="mt-1.5 max-w-xs break-words text-[11.5px] leading-relaxed text-danger">
+                          <div className="break-words text-[11.5px] leading-relaxed text-danger">
                             {c.last_error}
                           </div>
                         )}
-                      </Td>
-                      <Td className="text-muted">
-                        {c.challenge_type === "http-01" ? "Let's Encrypt" : "self-signed"}
-                      </Td>
-                      <Td className={days !== null && days < 14 ? "text-warn" : "text-muted"}>
-                        {c.not_after ? (
-                          <>
-                            {formatDate(c.not_after).split(",")[0]}
-                            {days !== null && <span className="ml-1 text-faint">({days}d)</span>}
-                          </>
-                        ) : (
-                          "—"
-                        )}
-                      </Td>
-                      <Td className="text-muted">
-                        {c.renew_after ? `after ${formatDate(c.renew_after).split(",")[0]}` : "—"}
-                      </Td>
-                      <Td className="text-right">
-                        <Button
-                          size="sm"
-                          onClick={async () => {
-                            setRenewingID(c.id);
-                            try {
-                              await post(`/api/admin/certificates/${c.id}/renew`);
-                              toast(`Renewal started for ${c.hostname}`);
-                              setTimeout(reload, 2500);
-                            } catch (e: any) {
-                              toast(e.message, "error");
-                            } finally {
-                              setRenewingID(null);
-                            }
-                          }}
-                          busy={renewingID === c.id}
-                        >
-                          <RotateCw size={12} />
-                          {c.status === "error" || c.status === "dns_wait" ? "Retry" : "Renew"}
-                        </Button>
-                      </Td>
-                    </tr>
-                  );
-                })}
-              </Table>
+                        <div className="grid grid-cols-2 gap-3 text-[12.5px]">
+                          <CertFact label="Issuer" value={issuerLabel(c)} />
+                          <CertFact
+                            label="Expires"
+                            value={c.not_after ? `${formatDate(c.not_after).split(",")[0]}${days !== null ? ` (${days}d)` : ""}` : "—"}
+                            tone={days !== null && days < 14 ? "warn" : undefined}
+                          />
+                          <CertFact
+                            label="Renews after"
+                            value={c.renew_after ? formatDate(c.renew_after).split(",")[0] : "—"}
+                          />
+                          <div className="flex items-end justify-start">
+                            <RenewButton
+                              certificate={c}
+                              busy={renewingID === c.id}
+                              onStart={() => setRenewingID(c.id)}
+                              onDone={() => setRenewingID(null)}
+                              reload={reload}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="hidden md:block">
+                  <Table
+                    head={
+                      <>
+                        <Th>Hostname</Th>
+                        <Th>Status</Th>
+                        <Th>Issuer</Th>
+                        <Th>Expires</Th>
+                        <Th>Renews after</Th>
+                        <Th />
+                      </>
+                    }
+                  >
+                    {data.certificates.map((c) => {
+                      const days = daysUntil(c.not_after);
+                      return (
+                        <tr key={c.id}>
+                          <Td>
+                            <Identifier>{c.hostname}</Identifier>
+                          </Td>
+                          <Td>
+                            <StatusPill status={c.status} />
+                            {c.last_error && (
+                              <div className="mt-1.5 max-w-xs break-words text-[11.5px] leading-relaxed text-danger">
+                                {c.last_error}
+                              </div>
+                            )}
+                          </Td>
+                          <Td className="text-muted">{issuerLabel(c)}</Td>
+                          <Td className={days !== null && days < 14 ? "text-warn" : "text-muted"}>
+                            {c.not_after ? (
+                              <>
+                                {formatDate(c.not_after).split(",")[0]}
+                                {days !== null && <span className="ml-1 text-faint">({days}d)</span>}
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </Td>
+                          <Td className="text-muted">
+                            {c.renew_after ? formatDate(c.renew_after).split(",")[0] : "—"}
+                          </Td>
+                          <Td className="text-right">
+                            <RenewButton
+                              certificate={c}
+                              busy={renewingID === c.id}
+                              onStart={() => setRenewingID(c.id)}
+                              onDone={() => setRenewingID(null)}
+                              reload={reload}
+                            />
+                          </Td>
+                        </tr>
+                      );
+                    })}
+                  </Table>
+                </div>
+              </>
             )}
           </Card>
         </>
       )}
     </div>
+  );
+}
+
+function issuerLabel(c: Certificate): string {
+  return c.challenge_type === "http-01" ? "Let's Encrypt" : "Self-signed";
+}
+
+function CertFact({ label, value, tone }: { label: string; value: string; tone?: "warn" }) {
+  return (
+    <div>
+      <div className="text-[12px] font-medium text-faint">{label}</div>
+      <div className={`mt-1 leading-snug ${tone === "warn" ? "text-warn" : "text-muted"}`}>{value}</div>
+    </div>
+  );
+}
+
+function RenewButton({
+  certificate,
+  busy,
+  onStart,
+  onDone,
+  reload,
+}: {
+  certificate: Certificate;
+  busy: boolean;
+  onStart: () => void;
+  onDone: () => void;
+  reload: () => void;
+}) {
+  return (
+    <Button
+      size="sm"
+      onClick={async () => {
+        onStart();
+        try {
+          await post(`/api/admin/certificates/${certificate.id}/renew`);
+          toast(`Renewal started for ${certificate.hostname}`);
+          setTimeout(reload, 2500);
+        } catch (e: any) {
+          toast(e.message, "error");
+        } finally {
+          onDone();
+        }
+      }}
+      busy={busy}
+    >
+      <RotateCw size={12} />
+      {certificate.status === "error" || certificate.status === "dns_wait" ? "Retry" : "Renew"}
+    </Button>
   );
 }

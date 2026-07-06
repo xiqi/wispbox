@@ -258,7 +258,44 @@ const pillTones: Record<string, string> = {
   inactive: "text-danger",
   unknown: "text-faint",
   direct: "text-info",
+  relay: "text-info",
+  inherit: "text-muted",
+  none: "text-faint",
+  deferred: "text-warn",
+  hold: "text-warn",
+  incoming: "text-info",
 };
+
+const pillLabels: Record<string, string> = {
+  ok: "OK",
+  active: "Active",
+  warn: "Warning",
+  pending: "Pending",
+  dns_wait: "DNS wait",
+  issuing: "Issuing",
+  missing: "Missing",
+  mismatch: "Mismatch",
+  error: "Error",
+  inactive: "Disabled",
+  unknown: "Unknown",
+  direct: "Direct",
+  relay: "Relay",
+  inherit: "Inherit",
+  none: "Not issued",
+  deferred: "Deferred",
+  hold: "Hold",
+  incoming: "Incoming",
+};
+
+function humanStatusLabel(value: string): string {
+  const raw = value.trim();
+  const keyed = raw.toLowerCase().replaceAll(" ", "_");
+  if (pillLabels[keyed]) return pillLabels[keyed];
+  const text = raw.replaceAll("_", " ");
+  if (!text) return "";
+  if (/^[A-Z0-9]+$/.test(text)) return text;
+  return text[0].toUpperCase() + text.slice(1);
+}
 
 export function StatusPill({ status, label }: { status: string; label?: string }) {
   const tone = pillTones[status] ?? "text-muted";
@@ -267,7 +304,7 @@ export function StatusPill({ status, label }: { status: string; label?: string }
       className={`inline-flex h-6 items-center gap-1.5 rounded-full border border-line bg-inset px-2 text-[11.5px] font-medium leading-none ${tone}`}
     >
       <span className="h-1.5 w-1.5 rounded-full bg-current" />
-      {label ?? status.replaceAll("_", " ")}
+      {humanStatusLabel(label ?? status)}
     </span>
   );
 }
@@ -288,8 +325,8 @@ export function Card({
   return (
     <section className={`rounded-xl border border-line bg-raised ${className}`}>
       {(title || actions) && (
-        <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
-          <h3 className="text-[13px] font-semibold text-ink">{title}</h3>
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
+          <h3 className="text-[14px] font-semibold text-ink">{title}</h3>
           {actions && <div className="flex items-center gap-2">{actions}</div>}
         </header>
       )}
@@ -461,7 +498,7 @@ export function Table({ head, children }: { head: ReactNode; children: ReactNode
     <div className="-mb-4 overflow-x-auto">
       <table className="w-full border-collapse text-left">
         <thead>
-          <tr className="border-b border-line text-[11.5px] uppercase text-faint">
+          <tr className="border-b border-line text-[12px] text-faint">
             {head}
           </tr>
         </thead>

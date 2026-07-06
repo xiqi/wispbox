@@ -118,10 +118,10 @@ func Status(ctx context.Context, o *Options) error {
 	fmt.Println("database:  ", app.Cfg.DBPath)
 	fmt.Println("initialized:", app.Store.IsInitialized(ctx))
 
-	domains, _ := app.Store.ListDomains(ctx)
-	mailboxes, _ := app.Store.ListMailboxes(ctx, 0)
-	aliases, _ := app.Store.ListAliases(ctx, 0)
-	fmt.Printf("objects:    %d domain(s), %d mailbox(es), %d alias(es)\n", len(domains), len(mailboxes), len(aliases))
+	domainCount, _ := app.Store.CountDomains(ctx)
+	mailboxCount, _ := app.Store.CountMailboxes(ctx, 0)
+	aliasCount, _ := app.Store.CountAliases(ctx, 0)
+	fmt.Printf("objects:    %d domain(s), %d mailbox(es), %d alias(es)\n", domainCount, mailboxCount, aliasCount)
 
 	for _, svc := range []string{"wispboxd", "postfix", "dovecot"} {
 		active, err := app.Services.IsActive(ctx, svc)

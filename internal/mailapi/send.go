@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 
 	"github.com/xiqi/wispbox/internal/api/httpjson"
 	"github.com/xiqi/wispbox/internal/db"
+	"github.com/xiqi/wispbox/internal/imapclient"
 	"github.com/xiqi/wispbox/internal/security"
+	"github.com/xiqi/wispbox/internal/smtpclient"
 )
 
 var (
@@ -72,22 +75,14 @@ func (h *Handlers) parseSendRequest(w http.ResponseWriter, r *http.Request) (*se
 				if err := security.CheckOutgoingAttachment(fh.Filename, fh.Size); err != nil {
 					return nil, err
 				}
-				f, err := fh.Open()
-				if err != nil {
-					return nil, err
-				}
-				data, err := io.ReadAll(io.LimitReader(f, security.MaxAttachmentSize+1))
-				f.Close()
-				if err != nil {
-					return nil, err
-				}
-				if int64(len(data)) > security.MaxAttachmentSize {
-					return nil, fmt.Errorf("attachment %s exceeds the %d MB limit", fh.Filename, security.MaxAttachmentSizeMB)
-				}
+				fileHeader := fh
 				req.Atts = append(req.Atts, OutgoingAttachment{
 					Filename:    fh.Filename,
 					ContentType: fh.Header.Get("Content-Type"),
-					Data:        data,
+					SizeBytes:   fh.Size,
+					Open: func() (io.ReadCloser, error) {
+						return fileHeader.Open()
+					},
 				})
 			}
 		}
@@ -164,17 +159,37 @@ func (h *Handlers) deliver(w http.ResponseWriter, r *http.Request, mc *mailCtx, 
 		InReplyTo: strings.Trim(req.InReplyTo, "<>"),
 		Atts:      req.Atts,
 	}
-	raw, err := BuildMIME(out)
+
+	raw, size, err := buildOutgoingMIMEFile(out)
 	if err != nil {
 		httpjson.Error(w, http.StatusInternalServerError, fmt.Errorf("could not build the message: %w", err))
 		return
 	}
-	if int64(len(raw)) > security.MaxOutgoingMessageSize {
-		httpjson.Error(w, http.StatusBadRequest,
-			fmt.Errorf("message exceeds the %d MB limit", security.MaxOutgoingMessageSizeMB))
+	defer func() {
+		name := raw.Name()
+		raw.Close()
+		_ = os.Remove(name)
+	}()
+	if size > security.MaxOutgoingMessageSize {
+		httpjson.Error(w, http.StatusBadRequest, fmt.Errorf("message exceeds the %d MB limit", security.MaxOutgoingMessageSizeMB))
 		return
 	}
-	if err := h.SMTP.Send(r.Context(), mc.Creds, from, out.AllRecipients(), raw); err != nil {
+	recipients := out.AllRecipients()
+
+	if _, err := raw.Seek(0, io.SeekStart); err != nil {
+		httpjson.Error(w, http.StatusInternalServerError, fmt.Errorf("could not read the message: %w", err))
+		return
+	}
+	if sender, ok := h.SMTP.(smtpclient.ReaderSender); ok {
+		err = sender.SendReader(r.Context(), mc.Creds, from, recipients, raw)
+	} else {
+		var data []byte
+		data, err = io.ReadAll(raw)
+		if err == nil {
+			err = h.SMTP.Send(r.Context(), mc.Creds, from, recipients, data)
+		}
+	}
+	if err != nil {
 		_ = h.Store.AppendServiceEvent(r.Context(), db.ServiceEvent{
 			Service: "wispboxd", EventType: "send_error", Status: "error",
 			Message: fmt.Sprintf("%s: %v", from, err),
@@ -182,10 +197,47 @@ func (h *Handlers) deliver(w http.ResponseWriter, r *http.Request, mc *mailCtx, 
 		httpjson.Error(w, http.StatusBadGateway, err)
 		return
 	}
-	if err := h.IMAP.Append(r.Context(), mc.Creds, "Sent", raw, true); err != nil {
+
+	if _, err := raw.Seek(0, io.SeekStart); err != nil {
+		h.Log.Warn("append to Sent failed", "error", err)
+		httpjson.Write(w, http.StatusOK, nil)
+		return
+	}
+	if appender, ok := h.IMAP.(imapclient.ReaderAppender); ok {
+		err = appender.AppendReader(r.Context(), mc.Creds, "Sent", size, raw, true)
+	} else {
+		var data []byte
+		data, err = io.ReadAll(raw)
+		if err == nil {
+			err = h.IMAP.Append(r.Context(), mc.Creds, "Sent", data, true)
+		}
+	}
+	if err != nil {
 		h.Log.Warn("append to Sent failed", "error", err)
 	}
 	httpjson.Write(w, http.StatusOK, nil)
+}
+
+func buildOutgoingMIMEFile(out *Outgoing) (*os.File, int64, error) {
+	f, err := os.CreateTemp("", "wispbox-outgoing-*.eml")
+	if err != nil {
+		return nil, 0, err
+	}
+	cleanup := func() {
+		name := f.Name()
+		f.Close()
+		_ = os.Remove(name)
+	}
+	if err := WriteMIME(f, out); err != nil {
+		cleanup()
+		return nil, 0, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		cleanup()
+		return nil, 0, err
+	}
+	return f, info.Size(), nil
 }
 
 // reply loads the original to prefill threading headers, then delivers.
@@ -301,7 +353,12 @@ func (h *Handlers) forward(w http.ResponseWriter, r *http.Request, mc *mailCtx) 
 			httpjson.Error(w, http.StatusBadGateway, fmt.Errorf("could not fetch attachment %s", meta.Filename))
 			return
 		}
-		atts = append(atts, OutgoingAttachment{Filename: content.Filename, ContentType: content.MIMEType, Data: content.Data})
+		atts = append(atts, OutgoingAttachment{
+			Filename:    content.Filename,
+			ContentType: content.MIMEType,
+			SizeBytes:   int64(len(content.Data)),
+			Data:        content.Data,
+		})
 	}
 
 	// Honor an edited subject; otherwise default to "Fwd: <original>".

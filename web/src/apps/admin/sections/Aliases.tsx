@@ -74,7 +74,7 @@ export default function Aliases() {
                   <Td>
                     <Identifier muted>{a.destination}</Identifier>
                   </Td>
-                  <Td className="text-muted">{a.is_catch_all ? "catch-all" : "alias"}</Td>
+                  <Td className="text-muted">{a.is_catch_all ? "Catch-all" : "Alias"}</Td>
                   <Td>
                     <Toggle
                       checked={a.enabled}
@@ -86,7 +86,7 @@ export default function Aliases() {
                           toast(e.message, "error");
                         }
                       }}
-                      label={a.enabled ? "enabled" : "disabled"}
+                      label={a.enabled ? "Enabled" : "Disabled"}
                     />
                   </Td>
                   <Td className="text-right">

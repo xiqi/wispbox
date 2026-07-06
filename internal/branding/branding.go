@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"unicode"
@@ -17,6 +18,8 @@ const (
 
 	SettingName = "brand_name"
 	SettingLogo = "brand_logo"
+
+	DomainSettingPrefix = "brand_domain:"
 
 	MaxNameRunes = 40
 	MaxLogoBytes = 256 << 10
@@ -43,6 +46,90 @@ func Current(ctx context.Context, store Store) Brand {
 		Name: name,
 		Logo: strings.TrimSpace(store.GetSettingDefault(ctx, SettingLogo, "")),
 	}
+}
+
+// CurrentForHost returns the effective brand for an HTTP host. Domain-specific
+// settings override the global brand and inherit blank fields from it.
+func CurrentForHost(ctx context.Context, store Store, host string) Brand {
+	global := Current(ctx, store)
+	for _, domain := range HostDomains(host) {
+		name := strings.TrimSpace(store.GetSettingDefault(ctx, DomainSettingName(domain), ""))
+		logo := strings.TrimSpace(store.GetSettingDefault(ctx, DomainSettingLogo(domain), ""))
+		if name == "" && logo == "" {
+			continue
+		}
+		if name == "" {
+			name = global.Name
+		}
+		if logo == "" {
+			logo = global.Logo
+		}
+		return Brand{Name: name, Logo: logo}
+	}
+	return global
+}
+
+// DomainSettingName returns the settings key for a domain-specific display name.
+func DomainSettingName(domain string) string {
+	return domainSettingKey(domain, SettingName)
+}
+
+// DomainSettingLogo returns the settings key for a domain-specific logo.
+func DomainSettingLogo(domain string) string {
+	return domainSettingKey(domain, SettingLogo)
+}
+
+func domainSettingKey(domain, setting string) string {
+	return DomainSettingPrefix + NormalizeDomain(domain) + ":" + setting
+}
+
+// ParseDomainSettingKey extracts a domain-scoped brand setting key.
+func ParseDomainSettingKey(key string) (domain, setting string, ok bool) {
+	if !strings.HasPrefix(key, DomainSettingPrefix) {
+		return "", "", false
+	}
+	rest := strings.TrimPrefix(key, DomainSettingPrefix)
+	i := strings.LastIndex(rest, ":")
+	if i <= 0 || i == len(rest)-1 {
+		return "", "", false
+	}
+	setting = rest[i+1:]
+	if setting != SettingName && setting != SettingLogo {
+		return "", "", false
+	}
+	domain = NormalizeDomain(rest[:i])
+	if domain == "" {
+		return "", "", false
+	}
+	return domain, setting, true
+}
+
+// NormalizeDomain canonicalizes a setting-scope domain.
+func NormalizeDomain(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if h, _, err := net.SplitHostPort(value); err == nil {
+		value = h
+	}
+	value = strings.Trim(value, "[]")
+	return strings.TrimSuffix(value, ".")
+}
+
+// HostDomains returns the exact host plus parent domains, longest first.
+func HostDomains(host string) []string {
+	host = NormalizeDomain(host)
+	if host == "" {
+		return nil
+	}
+	parts := strings.Split(host, ".")
+	out := make([]string, 0, len(parts))
+	for i := 0; i < len(parts); i++ {
+		candidate := strings.Join(parts[i:], ".")
+		if candidate == "" {
+			continue
+		}
+		out = append(out, candidate)
+	}
+	return out
 }
 
 // ValidateName enforces a short display name suitable for headers and tabs.

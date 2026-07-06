@@ -3,6 +3,7 @@ package imapclient
 import (
 	"context"
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
 	"strings"
@@ -267,6 +268,14 @@ func (m *Mock) Append(_ context.Context, creds auth.Credentials, folder string, 
 	parsed.Seen = seen
 	mb.add(folder, parsed, raw, nil)
 	return nil
+}
+
+func (m *Mock) AppendReader(ctx context.Context, creds auth.Credentials, folder string, _ int64, raw io.Reader, seen bool) error {
+	data, err := io.ReadAll(raw)
+	if err != nil {
+		return err
+	}
+	return m.Append(ctx, creds, folder, data, seen)
 }
 
 func addressesText(addrs []Address) string {

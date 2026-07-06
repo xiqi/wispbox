@@ -23,7 +23,7 @@ func TestCheckOutgoingAttachment(t *testing.T) {
 		{"hta rejected", "page.hta", 64, "cannot be sent"},
 		{"disguised double extension rejected", "invoice.pdf.scr", 64, "cannot be sent"},
 		{"at size limit ok", "big.pdf", MaxAttachmentSize, ""},
-		{"over size limit", "huge.pdf", MaxAttachmentSize + 1, "exceeds the 25 MB limit"},
+		{"over size limit", "huge.pdf", MaxAttachmentSize + 1, "exceeds the 10 MB limit"},
 		{"empty attachment", "empty.pdf", 0, "is empty"},
 	}
 	for _, tt := range tests {

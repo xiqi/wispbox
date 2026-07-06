@@ -21,11 +21,11 @@ export function formatQuota(mb: number): string {
 
 /** Human labels for a DnsRecord.status; shared by the DNS section and setup. */
 export const dnsStatusLabel: Record<string, string> = {
-  ok: "found",
-  missing: "missing",
-  mismatch: "mismatch",
-  unknown: "not checked",
-  "": "not checked",
+  ok: "Found",
+  missing: "Missing",
+  mismatch: "Mismatch",
+  unknown: "Not checked",
+  "": "Not checked",
 };
 
 export function formatDate(iso?: string): string {

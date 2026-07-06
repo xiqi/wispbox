@@ -122,7 +122,7 @@ export default function Delivery() {
                   icon={Route}
                   title={r.name}
                   detail="Send through this relay."
-                  meta={`${r.host}:${r.port} · ${r.tls_mode.toUpperCase()}`}
+                  meta={`${r.host}:${r.port} · ${formatTLSMode(r.tls_mode)}`}
                   onClick={() => setPolicy("global", 0, `relay:${r.id}`)}
                 />
               ))
@@ -173,7 +173,7 @@ export default function Delivery() {
                       </Select>
                     </div>
                   </Td>
-                  <Td className="text-muted">{d.delivery_mode}</Td>
+                  <Td className="text-muted">{formatDeliveryMode(d.delivery_mode)}</Td>
                 </tr>
               );
             })}
@@ -213,9 +213,9 @@ export default function Delivery() {
                 <Td>
                   <Identifier muted>{r.host}:{r.port}</Identifier>
                 </Td>
-                <Td className="text-muted">{r.tls_mode}</Td>
+                <Td className="text-muted">{formatTLSMode(r.tls_mode)}</Td>
                 <Td>
-                  <StatusPill status={r.enabled ? "ok" : "inactive"} label={r.enabled ? "enabled" : "disabled"} />
+                  <StatusPill status={r.enabled ? "ok" : "inactive"} />
                 </Td>
                 <Td className="text-right">
                   <div className="flex items-center justify-end gap-1">
@@ -309,6 +309,17 @@ export default function Delivery() {
       )}
     </div>
   );
+}
+
+function formatDeliveryMode(mode?: string): string {
+  if (mode === "relay") return "Relay";
+  if (mode === "direct") return "Direct";
+  if (mode === "inherit") return "Inherit";
+  return mode ? mode[0].toUpperCase() + mode.slice(1) : "—";
+}
+
+function formatTLSMode(mode: Relay["tls_mode"]): string {
+  return mode === "starttls" ? "STARTTLS" : "Implicit TLS";
 }
 
 function MethodOption({

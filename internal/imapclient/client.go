@@ -11,6 +11,7 @@ package imapclient
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/xiqi/wispbox/internal/auth"
@@ -100,6 +101,12 @@ type Client interface {
 	Delete(ctx context.Context, creds auth.Credentials, folder string, uid uint32) error
 	SetSeen(ctx context.Context, creds auth.Credentials, folder string, uid uint32, seen bool) error
 	Append(ctx context.Context, creds auth.Credentials, folder string, raw []byte, seen bool) error
+}
+
+// ReaderAppender appends a message without requiring the caller to keep the
+// whole RFC 5322 payload in memory.
+type ReaderAppender interface {
+	AppendReader(ctx context.Context, creds auth.Credentials, folder string, size int64, raw io.Reader, seen bool) error
 }
 
 // clampLimit applies the shared page-size policy: default 50, hard cap 100.

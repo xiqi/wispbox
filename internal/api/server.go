@@ -42,7 +42,7 @@ func (a *App) Handler() (http.Handler, error) {
 }
 
 func (a *App) brand(w http.ResponseWriter, r *http.Request) {
-	httpjson.Write(w, http.StatusOK, map[string]any{"brand": branding.Current(r.Context(), a.Store)})
+	httpjson.Write(w, http.StatusOK, map[string]any{"brand": branding.CurrentForHost(r.Context(), a.Store, r.Host)})
 }
 
 // httpHandler is what listens on port 80 (8080 in dev): ACME challenges

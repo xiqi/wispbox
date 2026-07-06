@@ -101,7 +101,7 @@ export default function AdminApp() {
         className={`${navOpen ? "translate-x-0" : "-translate-x-full"} fixed inset-y-0 left-0 z-30 flex w-[228px] flex-col border-r border-line bg-bg-deep transition-transform md:static md:translate-x-0`}
       >
         <div className="flex items-center justify-between px-4 pb-2 pt-4">
-          <Wordmark sub="admin" />
+          <Wordmark sub="Admin" />
           <IconButton
             title="Close navigation"
             size="md"
@@ -167,7 +167,7 @@ export default function AdminApp() {
             onClick={() => setNavOpen(true)}
             icon={<Menu size={18} />}
           />
-          <h1 className="text-[15px] font-semibold text-ink">{active.label}</h1>
+          <h1 className="text-[18px] font-semibold tracking-normal text-ink">{active.label}</h1>
         </header>
         <div className="flex-1 overflow-y-auto px-5 py-5 md:px-8 md:py-6">
           <div className="mx-auto w-full max-w-5xl">

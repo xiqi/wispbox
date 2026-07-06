@@ -1,18 +1,19 @@
-import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from "react";
+import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { del, get, patch, post, postForm } from "../../../lib/api";
-import { brandFromSettings, useBrand } from "../../../lib/brand";
+import { brandSettingKeys, useBrand } from "../../../lib/brand";
 import { useLoad } from "../../../lib/hooks";
-import type { UpgradeStatus } from "../../../lib/types";
+import type { Domain, UpgradeStatus } from "../../../lib/types";
 import {
-  BrandMark,
   Button,
   Card,
   ErrorNote,
   Field,
   Input,
+  Select,
   Spinner,
   toast,
+  WispMark,
 } from "../../../components/ui";
 
 export default function Settings() {
@@ -20,28 +21,50 @@ export default function Settings() {
   const { data, error, busy, reload } = useLoad(() =>
     get<{ settings: Record<string, string> }>("/api/admin/settings"),
   );
+  const domains = useLoad(() => get<{ domains: Domain[] }>("/api/admin/domains"));
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const [acmeEmail, setAcmeEmail] = useState("");
   const [ipv4, setIpv4] = useState("");
   const [ipv6, setIpv6] = useState("");
+  const [appearanceDomain, setAppearanceDomain] = useState("");
   const [brandName, setBrandName] = useState("");
   const [logo, setLogo] = useState("");
   const [saving, setSaving] = useState(false);
   const [savingBrand, setSavingBrand] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const currentBrandKeys = useMemo(() => brandSettingKeys(appearanceDomain), [appearanceDomain]);
 
   useEffect(() => {
     if (data) {
       setAcmeEmail(data.settings.acme_email ?? "");
       setIpv4(data.settings.server_ipv4 ?? "");
       setIpv6(data.settings.server_ipv6 ?? "");
-      setBrandName(data.settings.brand_name ?? "");
-      setLogo(data.settings.brand_logo ?? "");
     }
   }, [data]);
 
-  if (busy && !data) return <Spinner />;
+  useEffect(() => {
+    if (!data) return;
+    setBrandName(data.settings[currentBrandKeys.name] ?? "");
+    setLogo(data.settings[currentBrandKeys.logo] ?? "");
+  }, [data, currentBrandKeys.name, currentBrandKeys.logo]);
+
+  if ((busy && !data) || (domains.busy && !domains.data)) return <Spinner />;
   if (error) return <ErrorNote>{error}</ErrorNote>;
+  if (domains.error) return <ErrorNote>{domains.error}</ErrorNote>;
+
+  const domainList = domains.data?.domains ?? [];
+  const globalName = data?.settings.brand_name?.trim() ?? "";
+  const globalLogo = data?.settings.brand_logo ?? "";
+  const previewName = brandName.trim() || (appearanceDomain ? globalName : "") || "wispbox";
+  const previewLogo = logo || (appearanceDomain ? globalLogo : "");
+  const scopeHint = appearanceDomain ? "Overrides this domain." : "Used when a domain has no override.";
+  const nameHint = appearanceDomain ? "Leave empty to use the global default." : "Leave empty to use wispbox.";
+  const logoHint = appearanceDomain
+    ? "PNG, JPEG, or WebP. 256 KB max. Leave empty to use the global logo."
+    : "PNG, JPEG, or WebP. 256 KB max.";
+  const logoEndpoint = appearanceDomain
+    ? `/api/admin/settings/logo?domain=${encodeURIComponent(appearanceDomain)}`
+    : "/api/admin/settings/logo";
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -66,12 +89,11 @@ export default function Settings() {
     setSavingBrand(true);
     try {
       const res = await patch<{ settings: Record<string, string> }>("/api/admin/settings", {
-        brand_name: brandName,
+        [currentBrandKeys.name]: brandName,
       });
-      const next = brandFromSettings(res.settings);
-      setBrandName(res.settings.brand_name ?? "");
-      setLogo(res.settings.brand_logo ?? "");
-      brand.setBrand(next);
+      setBrandName(res.settings[currentBrandKeys.name] ?? "");
+      setLogo(res.settings[currentBrandKeys.logo] ?? "");
+      await brand.reloadBrand().catch(() => undefined);
       toast("Appearance saved");
       reload();
     } catch (err: any) {
@@ -88,10 +110,9 @@ export default function Settings() {
     try {
       const form = new FormData();
       form.append("logo", file);
-      const res = await postForm<{ settings: Record<string, string> }>("/api/admin/settings/logo", form);
-      const next = brandFromSettings(res.settings);
-      setLogo(res.settings.brand_logo ?? "");
-      brand.setBrand(next);
+      const res = await postForm<{ settings: Record<string, string> }>(logoEndpoint, form);
+      setLogo(res.settings[currentBrandKeys.logo] ?? "");
+      await brand.reloadBrand().catch(() => undefined);
       toast("Logo updated");
       reload();
     } catch (err: any) {
@@ -105,10 +126,9 @@ export default function Settings() {
   async function removeLogo() {
     setUploadingLogo(true);
     try {
-      const res = await del<{ settings: Record<string, string> }>("/api/admin/settings/logo");
-      const next = brandFromSettings(res.settings);
-      setLogo("");
-      brand.setBrand(next);
+      const res = await del<{ settings: Record<string, string> }>(logoEndpoint);
+      setLogo(res.settings[currentBrandKeys.logo] ?? "");
+      await brand.reloadBrand().catch(() => undefined);
       toast("Logo removed");
       reload();
     } catch (err: any) {
@@ -121,26 +141,47 @@ export default function Settings() {
   return (
     <div className="space-y-5">
       <Card title="Appearance">
-        <div className="max-w-lg space-y-5">
+        <div className="max-w-xl space-y-5">
+          <Field label="Scope" hint={scopeHint}>
+            <Select value={appearanceDomain} onChange={(e) => setAppearanceDomain(e.target.value)}>
+              <option value="">Global default</option>
+              {domainList.map((domain) => (
+                <option key={domain.id} value={domain.name}>
+                  {domain.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
           <div className="flex items-center gap-4">
             <div className="flex h-16 w-24 items-center justify-center rounded-lg border border-line bg-inset px-3">
-              <BrandMark size={34} />
+              {previewLogo ? (
+                <img
+                  src={previewLogo}
+                  alt=""
+                  aria-hidden
+                  className="shrink-0 object-contain"
+                  style={{ width: 34 * 1.66, height: 34 }}
+                />
+              ) : (
+                <WispMark size={34} />
+              )}
             </div>
             <div className="min-w-0">
-              <div className="truncate text-[13.5px] font-medium text-ink">{brand.name}</div>
+              <div className="truncate text-[13.5px] font-medium text-ink">{previewName}</div>
               <div className="mt-1 text-[12.5px] leading-relaxed text-muted">
-                Shown in webmail, admin, setup, and browser tabs.
+                {appearanceDomain || "Global default"}
               </div>
             </div>
           </div>
 
           <form onSubmit={saveBrand} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-            <Field label="System name" hint="Leave empty to use wispbox.">
+            <Field label="Display name" hint={nameHint}>
               <Input
                 value={brandName}
                 maxLength={40}
                 onChange={(e) => setBrandName(e.target.value)}
-                placeholder="wispbox"
+                placeholder={appearanceDomain ? globalName || "wispbox" : "wispbox"}
               />
             </Field>
             <Button type="submit" variant="primary" busy={savingBrand} className="w-full sm:mt-6 sm:w-auto">
@@ -150,7 +191,7 @@ export default function Settings() {
 
           <div className="space-y-3 border-t border-line pt-5">
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-              <Field label="Logo" hint="PNG, JPEG, or WebP. 256 KB max.">
+              <Field label="Logo" hint={logoHint}>
                 <input
                   ref={logoInputRef}
                   type="file"

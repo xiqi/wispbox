@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -63,7 +64,10 @@ func (h *Handlers) overview(w http.ResponseWriter, r *http.Request, _ *adminCtx)
 		certs = []db.Certificate{}
 	}
 	recentErrors := h.recentOverviewErrors(ctx, 10)
-	mailboxes, _ := h.Core.Store.ListMailboxes(ctx, 0)
+	mailboxCount := 0
+	if n, err := h.Core.Store.CountMailboxes(ctx, 0); err == nil {
+		mailboxCount = n
+	}
 
 	httpjson.Write(w, http.StatusOK, map[string]any{
 		"mode":           string(h.Core.Cfg.Mode),
@@ -74,7 +78,7 @@ func (h *Handlers) overview(w http.ResponseWriter, r *http.Request, _ *adminCtx)
 		"disk":           disk,
 		"queue_count":    queueCount,
 		"domains":        domainViews,
-		"mailbox_count":  len(mailboxes),
+		"mailbox_count":  mailboxCount,
 		"certificates":   certs,
 		"recent_errors":  recentErrors,
 	})
@@ -105,7 +109,16 @@ func (h *Handlers) recentOverviewErrors(ctx context.Context, limit int) []db.Ser
 	}
 
 	if h.Queue != nil {
-		if items, err := h.Queue.List(ctx); err == nil {
+		var (
+			items []services.QueueItem
+			err   error
+		)
+		if q, ok := h.Queue.(services.LimitedQueueInspector); ok {
+			items, err = q.ListLimit(ctx, limit)
+		} else {
+			items, err = h.Queue.List(ctx)
+		}
+		if err == nil {
 			id := int64(-1)
 			for _, item := range items {
 				reason := strings.TrimSpace(item.Reason)
@@ -139,10 +152,10 @@ func (h *Handlers) recentOverviewErrors(ctx context.Context, limit int) []db.Ser
 	}
 
 	if h.Logs != nil {
-		if lines, err := h.Logs.Tail(ctx, []string{"postfix", "dovecot", "wispboxd"}, 200); err == nil {
+		if lines, err := h.Logs.Tail(ctx, []string{"postfix", "dovecot", "wispboxd"}, 80); err == nil {
 			id := int64(-10000)
 			for _, line := range lines {
-				if !looksLikeErrorLog(line.Message) {
+				if !looksLikeActionableLog(line.Service, line.Message) {
 					continue
 				}
 				add(db.ServiceEvent{
@@ -179,24 +192,90 @@ func (h *Handlers) recentOverviewErrors(ctx context.Context, limit int) []db.Ser
 	return out
 }
 
-func looksLikeErrorLog(message string) bool {
+func looksLikeActionableLog(service, message string) bool {
 	msg := strings.ToLower(message)
+	if isNoisyOverviewLog(msg) {
+		return false
+	}
+
+	if strings.Contains(msg, "status=deferred") ||
+		strings.Contains(msg, "status=bounced") ||
+		strings.Contains(msg, "reject:") {
+		return true
+	}
+
+	if service == "postfix" && strings.Contains(msg, "connect to ") {
+		for _, needle := range []string{
+			"connection timed out",
+			"timed out",
+			"network is unreachable",
+			"no route to host",
+			"connection refused",
+		} {
+			if strings.Contains(msg, needle) {
+				return true
+			}
+		}
+	}
+
+	if strings.Contains(msg, "authentication failed") ||
+		strings.Contains(msg, "auth failed") ||
+		strings.Contains(msg, "relay access denied") ||
+		strings.Contains(msg, "sender address rejected") ||
+		strings.Contains(msg, "recipient address rejected") ||
+		strings.Contains(msg, "host or domain name not found") {
+		return true
+	}
+	if service == "wispboxd" &&
+		(strings.Contains(msg, "certificate") || strings.Contains(msg, "cert")) &&
+		(strings.Contains(msg, "failed") || strings.Contains(msg, "error")) {
+		return true
+	}
+
 	for _, needle := range []string{
-		"status=deferred",
-		"status=bounced",
-		"reject:",
-		"warning:",
-		"error",
-		"fatal",
 		"panic",
-		"timed out",
-		"timeout",
-		"authentication failed",
-		"lost connection",
+		"fatal:",
+		"out of memory",
+		"oom-kill",
+		"no space left on device",
+		"too many open files",
+		"permission denied",
+		"failed with result",
+		"main process exited",
+		"listen tcp",
 	} {
 		if strings.Contains(msg, needle) {
 			return true
 		}
+	}
+	return false
+}
+
+func isNoisyOverviewLog(msg string) bool {
+	switch {
+	case strings.Contains(msg, "tls handshake error") &&
+		(strings.Contains(msg, "unknown certificate") ||
+			strings.Contains(msg, "bad certificate") ||
+			strings.Contains(msg, "client didn't provide a certificate")):
+		return true
+	case strings.Contains(msg, "ssl_accept error") &&
+		(strings.Contains(msg, "lost connection") ||
+			strings.Contains(msg, "unknown protocol") ||
+			strings.Contains(msg, "wrong version number")):
+		return true
+	case strings.Contains(msg, "symlink leaves directory"):
+		return true
+	case strings.Contains(msg, "killed with signal 15"):
+		return true
+	case strings.Contains(msg, "status=15/term") ||
+		strings.Contains(msg, "code=killed, status=15"):
+		return true
+	case strings.Contains(msg, "disconnected: logged out"):
+		return true
+	case strings.Contains(msg, "imap-login: login:"):
+		return true
+	case strings.Contains(msg, "connect from "):
+		return true
 	}
 	return false
 }
@@ -384,16 +463,17 @@ func (h *Handlers) patchSettings(w http.ResponseWriter, r *http.Request, ac *adm
 	// multi-field save never leaves settings half-applied.
 	clean := map[string]string{}
 	for k, v := range req {
-		if !settableKeys[k] {
-			httpjson.Error(w, http.StatusBadRequest, fmt.Errorf("setting %q cannot be changed here", k))
-			return
-		}
-		v = strings.TrimSpace(v)
-		if err := validateSetting(k, v); err != nil {
+		key, err := h.cleanSettingKey(r.Context(), k)
+		if err != nil {
 			httpjson.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		clean[k] = v
+		v = strings.TrimSpace(v)
+		if err := validateSetting(key, v); err != nil {
+			httpjson.Error(w, http.StatusBadRequest, err)
+			return
+		}
+		clean[key] = v
 	}
 	for k, v := range clean {
 		if err := h.Core.Store.SetSetting(r.Context(), k, v); err != nil {
@@ -404,6 +484,47 @@ func (h *Handlers) patchSettings(w http.ResponseWriter, r *http.Request, ac *adm
 	}
 	all, _ := h.Core.Store.AllSettings(r.Context())
 	httpjson.Write(w, http.StatusOK, map[string]any{"settings": all})
+}
+
+func (h *Handlers) cleanSettingKey(ctx context.Context, key string) (string, error) {
+	if settableKeys[key] {
+		return key, nil
+	}
+	domain, setting, ok := branding.ParseDomainSettingKey(key)
+	if !ok || setting != branding.SettingName {
+		return "", fmt.Errorf("setting %q cannot be changed here", key)
+	}
+	domain, err := h.cleanBrandDomain(ctx, domain)
+	if err != nil {
+		return "", err
+	}
+	return branding.DomainSettingName(domain), nil
+}
+
+func (h *Handlers) cleanBrandDomain(ctx context.Context, raw string) (string, error) {
+	domain := branding.NormalizeDomain(raw)
+	if err := db.ValidateDomainName(domain); err != nil {
+		return "", err
+	}
+	if _, err := h.Core.Store.GetDomainByName(ctx, domain); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return "", fmt.Errorf("domain %s does not exist", domain)
+		}
+		return "", err
+	}
+	return domain, nil
+}
+
+func (h *Handlers) brandLogoSettingKey(r *http.Request) (string, error) {
+	domain := strings.TrimSpace(r.URL.Query().Get("domain"))
+	if domain == "" {
+		return branding.SettingLogo, nil
+	}
+	domain, err := h.cleanBrandDomain(r.Context(), domain)
+	if err != nil {
+		return "", err
+	}
+	return branding.DomainSettingLogo(domain), nil
 }
 
 // validateSetting enforces value shape for the admin-settable keys.
@@ -421,10 +542,18 @@ func validateSetting(key, value string) error {
 	case branding.SettingName:
 		return branding.ValidateName(value)
 	}
+	if _, setting, ok := branding.ParseDomainSettingKey(key); ok && setting == branding.SettingName {
+		return branding.ValidateName(value)
+	}
 	return nil
 }
 
 func (h *Handlers) uploadLogo(w http.ResponseWriter, r *http.Request, ac *adminCtx) {
+	key, err := h.brandLogoSettingKey(r)
+	if err != nil {
+		httpjson.Error(w, http.StatusBadRequest, err)
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, branding.MaxLogoBytes+(64<<10))
 	file, _, err := r.FormFile("logo")
 	if err != nil {
@@ -443,21 +572,26 @@ func (h *Handlers) uploadLogo(w http.ResponseWriter, r *http.Request, ac *adminC
 		httpjson.Error(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := h.Core.Store.SetSetting(r.Context(), branding.SettingLogo, dataURL); err != nil {
+	if err := h.Core.Store.SetSetting(r.Context(), key, dataURL); err != nil {
 		httpjson.Fail(w, err)
 		return
 	}
-	h.auditLog(r, ac, "setting_update", "setting", branding.SettingLogo)
+	h.auditLog(r, ac, "setting_update", "setting", key)
 	all, _ := h.Core.Store.AllSettings(r.Context())
 	httpjson.Write(w, http.StatusOK, map[string]any{"settings": all})
 }
 
 func (h *Handlers) deleteLogo(w http.ResponseWriter, r *http.Request, ac *adminCtx) {
-	if err := h.Core.Store.SetSetting(r.Context(), branding.SettingLogo, ""); err != nil {
+	key, err := h.brandLogoSettingKey(r)
+	if err != nil {
+		httpjson.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := h.Core.Store.SetSetting(r.Context(), key, ""); err != nil {
 		httpjson.Fail(w, err)
 		return
 	}
-	h.auditLog(r, ac, "setting_update", "setting", branding.SettingLogo)
+	h.auditLog(r, ac, "setting_update", "setting", key)
 	all, _ := h.Core.Store.AllSettings(r.Context())
 	httpjson.Write(w, http.StatusOK, map[string]any{"settings": all})
 }

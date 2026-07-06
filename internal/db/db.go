@@ -19,13 +19,13 @@ import (
 
 // Open opens (creating if necessary) the control database at path.
 func Open(path string) (*sql.DB, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)", path)
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)&_pragma=cache_size(-512)&_pragma=mmap_size(0)", path)
 	sqldb, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite db: %w", err)
 	}
-	// SQLite handles one writer at a time. A single connection keeps the
-	// modernc driver footprint small on tiny VPS hosts.
+	// SQLite handles one writer at a time. A single connection plus a small
+	// page cache keeps the modernc driver footprint small on tiny VPS hosts.
 	sqldb.SetMaxOpenConns(1)
 	sqldb.SetMaxIdleConns(1)
 	sqldb.SetConnMaxLifetime(0)

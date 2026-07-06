@@ -1,6 +1,7 @@
 package mailapi
 
 import (
+	"io"
 	"strings"
 	"testing"
 
@@ -57,6 +58,36 @@ func TestBuildMIMEHTMLWithAttachment(t *testing.T) {
 		t.Errorf("html body lost when attachment present: %q", msg.HTMLBody)
 	}
 	if len(msg.Attachments) != 1 || msg.Attachments[0].Filename != "a.txt" {
+		t.Errorf("attachment lost: %+v", msg.Attachments)
+	}
+}
+
+func TestBuildMIMEStreamsAttachmentFromOpener(t *testing.T) {
+	opened := 0
+	raw, err := BuildMIME(&Outgoing{
+		From: "me@example.com", To: []string{"you@example.com"},
+		Subject: "hi", TextBody: "text",
+		Atts: []OutgoingAttachment{{
+			Filename:    "streamed.txt",
+			ContentType: "text/plain",
+			SizeBytes:   int64(len("streamed body")),
+			Open: func() (io.ReadCloser, error) {
+				opened++
+				return io.NopCloser(strings.NewReader("streamed body")), nil
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opened != 1 {
+		t.Fatalf("attachment opener called %d times, want 1", opened)
+	}
+	msg, err := imapclient.ParseMessage(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msg.Attachments) != 1 || msg.Attachments[0].Filename != "streamed.txt" {
 		t.Errorf("attachment lost: %+v", msg.Attachments)
 	}
 }

@@ -63,7 +63,7 @@ func (h *Handlers) changePassword(w http.ResponseWriter, r *http.Request, ac *ad
 }
 
 func (h *Handlers) totpSetup(w http.ResponseWriter, r *http.Request, ac *adminCtx) {
-	secret, uri, err := auth.GenerateTOTPSecret(branding.Current(r.Context(), h.Core.Store).Name, ac.Admin.Username)
+	secret, uri, err := auth.GenerateTOTPSecret(branding.CurrentForHost(r.Context(), h.Core.Store, r.Host).Name, ac.Admin.Username)
 	if err != nil {
 		httpjson.Fail(w, err)
 		return
@@ -133,7 +133,7 @@ func (h *Handlers) totpDisable(w http.ResponseWriter, r *http.Request, ac *admin
 }
 
 func (h *Handlers) passkeyRegisterOptions(w http.ResponseWriter, r *http.Request, ac *adminCtx) {
-	wa, rpID, err := auth.WebAuthnForRequest(r, branding.Current(r.Context(), h.Core.Store).Name)
+	wa, rpID, err := auth.WebAuthnForRequest(r, branding.CurrentForHost(r.Context(), h.Core.Store, r.Host).Name)
 	if err != nil {
 		httpjson.Fail(w, err)
 		return
@@ -177,7 +177,7 @@ func (h *Handlers) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request,
 		httpjson.Fail(w, err)
 		return
 	}
-	wa, rpID, err := auth.WebAuthnForRequest(r, branding.Current(r.Context(), h.Core.Store).Name)
+	wa, rpID, err := auth.WebAuthnForRequest(r, branding.CurrentForHost(r.Context(), h.Core.Store, r.Host).Name)
 	if err != nil {
 		httpjson.Fail(w, err)
 		return
@@ -222,7 +222,7 @@ func (h *Handlers) passkeyDelete(w http.ResponseWriter, r *http.Request, ac *adm
 }
 
 func (h *Handlers) passkeyLoginOptions(w http.ResponseWriter, r *http.Request) {
-	wa, _, err := auth.WebAuthnForRequest(r, branding.Current(r.Context(), h.Core.Store).Name)
+	wa, _, err := auth.WebAuthnForRequest(r, branding.CurrentForHost(r.Context(), h.Core.Store, r.Host).Name)
 	if err != nil {
 		httpjson.Fail(w, err)
 		return
@@ -253,7 +253,7 @@ func (h *Handlers) passkeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 		httpjson.Fail(w, err)
 		return
 	}
-	wa, rpID, err := auth.WebAuthnForRequest(r, branding.Current(r.Context(), h.Core.Store).Name)
+	wa, rpID, err := auth.WebAuthnForRequest(r, branding.CurrentForHost(r.Context(), h.Core.Store, r.Host).Name)
 	if err != nil {
 		httpjson.Fail(w, err)
 		return

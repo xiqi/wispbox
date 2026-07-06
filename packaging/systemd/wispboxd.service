@@ -11,8 +11,8 @@ Group=wispbox
 ExecStart=/usr/local/bin/wispboxd serve --config /etc/wispbox/wispbox.conf
 Restart=on-failure
 RestartSec=3
-Environment=GOMEMLIMIT=96MiB
-Environment=GOGC=40
+Environment=GOMEMLIMIT=64MiB
+Environment=GOGC=30
 
 # wispboxd binds 80 and 443 as an unprivileged user.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
@@ -34,8 +34,8 @@ PrivateTmp=true
 # gone), which would make every `sudo -n` call fail and mail delivery stall.
 
 # Keep memory in check on tiny hosts. The mail services have their own caps.
-MemoryHigh=96M
-MemoryMax=128M
+MemoryHigh=64M
+MemoryMax=96M
 TasksMax=64
 
 [Install]

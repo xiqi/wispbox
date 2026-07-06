@@ -13,7 +13,9 @@ import (
 type OutgoingAttachment struct {
 	Filename    string
 	ContentType string
+	SizeBytes   int64
 	Data        []byte
+	Open        func() (io.ReadCloser, error)
 }
 
 // Outgoing is a fully specified message to build and send.
@@ -41,6 +43,16 @@ func (o *Outgoing) AllRecipients() []string {
 // BuildMIME renders the message as RFC 5322 bytes. BCC recipients appear in
 // the envelope only, never in headers.
 func BuildMIME(o *Outgoing) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := WriteMIME(&buf, o); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// WriteMIME renders the message as RFC 5322 bytes to w. BCC recipients appear
+// in the envelope only, never in headers.
+func WriteMIME(w io.Writer, o *Outgoing) error {
 	var h mail.Header
 	h.SetDate(time.Now())
 	h.SetAddressList("From", []*mail.Address{{Address: o.From}})
@@ -56,10 +68,9 @@ func BuildMIME(o *Outgoing) ([]byte, error) {
 	}
 	h.Set("X-Mailer", "wispbox")
 
-	var buf bytes.Buffer
-	mw, err := mail.CreateWriter(&buf, h)
+	mw, err := mail.CreateWriter(w, h)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// A message with an HTML body is multipart/alternative: a plain-text part
@@ -69,16 +80,16 @@ func BuildMIME(o *Outgoing) ([]byte, error) {
 	if o.HTMLBody != "" {
 		iw, err := mw.CreateInline()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		var th mail.InlineHeader
 		th.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
 		tw, err := iw.CreatePart(th)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if _, err := io.WriteString(tw, o.TextBody); err != nil {
-			return nil, err
+			return err
 		}
 		tw.Close()
 
@@ -86,10 +97,10 @@ func BuildMIME(o *Outgoing) ([]byte, error) {
 		hh.SetContentType("text/html", map[string]string{"charset": "utf-8"})
 		hw, err := iw.CreatePart(hh)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if _, err := io.WriteString(hw, o.HTMLBody); err != nil {
-			return nil, err
+			return err
 		}
 		hw.Close()
 		iw.Close()
@@ -98,10 +109,10 @@ func BuildMIME(o *Outgoing) ([]byte, error) {
 		th.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
 		tw, err := mw.CreateSingleInline(th)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if _, err := io.WriteString(tw, o.TextBody); err != nil {
-			return nil, err
+			return err
 		}
 		tw.Close()
 	}
@@ -116,15 +127,33 @@ func BuildMIME(o *Outgoing) ([]byte, error) {
 		ah.SetFilename(att.Filename)
 		aw, err := mw.CreateAttachment(ah)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if _, err := aw.Write(att.Data); err != nil {
-			return nil, err
+		src, err := att.open()
+		if err != nil {
+			aw.Close()
+			return err
+		}
+		_, copyErr := io.Copy(aw, src)
+		closeErr := src.Close()
+		if copyErr != nil {
+			aw.Close()
+			return copyErr
+		}
+		if closeErr != nil {
+			aw.Close()
+			return closeErr
 		}
 		aw.Close()
 	}
-	mw.Close()
-	return buf.Bytes(), nil
+	return mw.Close()
+}
+
+func (a OutgoingAttachment) open() (io.ReadCloser, error) {
+	if a.Open != nil {
+		return a.Open()
+	}
+	return io.NopCloser(bytes.NewReader(a.Data)), nil
 }
 
 func toAddressList(addrs []string) []*mail.Address {

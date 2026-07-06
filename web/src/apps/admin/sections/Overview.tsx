@@ -92,8 +92,11 @@ export default function Overview() {
                     <Identifier>{d.name}</Identifier>
                     <div className="flex flex-wrap gap-2">
                       <StatusPill status={d.status} />
-                      <StatusPill status={d.cert_status ?? "none"} label={`cert ${d.cert_status ?? "none"}`} />
-                      <StatusPill status={d.delivery_mode ?? "direct"} label={d.delivery_mode ?? "direct"} />
+                      <StatusPill
+                        status={d.cert_status ?? "none"}
+                        label={`Certificate: ${formatStatusText(d.cert_status ?? "none")}`}
+                      />
+                      <StatusPill status={d.delivery_mode ?? "direct"} label={formatStatusText(d.delivery_mode ?? "direct")} />
                     </div>
                   </div>
                 ))}
@@ -120,7 +123,7 @@ export default function Overview() {
                       <Td>
                         <StatusPill status={d.cert_status ?? "none"} />
                       </Td>
-                      <Td className="text-muted">{d.delivery_mode}</Td>
+                      <Td className="text-muted">{formatStatusText(d.delivery_mode ?? "direct")}</Td>
                     </tr>
                   ))}
                 </Table>
@@ -208,6 +211,12 @@ export default function Overview() {
   );
 }
 
+function formatStatusText(value: string): string {
+  if (value === "dns_wait") return "DNS wait";
+  if (value === "none") return "Not issued";
+  return value ? value.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase()) : "—";
+}
+
 function Stat({
   label,
   value,
@@ -221,7 +230,7 @@ function Stat({
 }) {
   return (
     <div className="rounded-xl border border-line bg-raised px-4 py-3.5">
-      <div className="text-[11px] font-medium uppercase text-faint">{label}</div>
+      <div className="text-[11px] font-medium text-faint">{label}</div>
       <div
         className={`mt-1 truncate text-[17px] font-semibold ${
           tone === "ok" ? "text-ok" : tone === "bad" ? "text-danger" : "text-ink"

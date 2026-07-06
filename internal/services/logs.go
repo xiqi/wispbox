@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -30,9 +31,16 @@ type JournalLogReader struct{}
 
 func NewJournalLogReader() *JournalLogReader { return &JournalLogReader{} }
 
+const maxLogMessageBytes = 4096
+
 func (j *JournalLogReader) Tail(ctx context.Context, svcs []string, n int) ([]LogLine, error) {
-	if n <= 0 || n > 1000 {
-		n = 200
+	if n <= 0 {
+		n = 100
+	} else if n > 500 {
+		n = 500
+	}
+	if len(svcs) == 0 {
+		svcs = []string{"postfix", "dovecot", "opendkim", "wispboxd"}
 	}
 	args := []string{"--no-pager", "--output", "json", "-n", strconv.Itoa(n)}
 	for _, s := range svcs {
@@ -46,46 +54,123 @@ func (j *JournalLogReader) Tail(ctx context.Context, svcs []string, n int) ([]Lo
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "journalctl", args...).Output()
+	cmd := exec.CommandContext(ctx, "journalctl", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("journalctl: %w", err)
 	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("journalctl: %w", err)
+	}
+
 	var lines []LogLine
-	sc := bufio.NewScanner(bytes.NewReader(out))
-	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
-	for sc.Scan() {
-		var raw struct {
-			Message   any    `json:"MESSAGE"`
-			Unit      string `json:"_SYSTEMD_UNIT"`
-			Timestamp string `json:"__REALTIME_TIMESTAMP"`
+	br := bufio.NewReaderSize(stdout, 64*1024)
+	for {
+		line, err := readJournalLine(br, 256*1024)
+		if len(line) > 0 {
+			if parsed, ok := parseJournalLine(line); ok {
+				lines = append(lines, parsed)
+			}
 		}
-		if err := json.Unmarshal(sc.Bytes(), &raw); err != nil {
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			_ = cmd.Wait()
+			return nil, err
+		}
+	}
+	waitErr := cmd.Wait()
+	if waitErr != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = waitErr.Error()
+		}
+		return nil, fmt.Errorf("journalctl: %s", msg)
+	}
+	return lines, nil
+}
+
+func parseJournalLine(line []byte) (LogLine, bool) {
+	var raw struct {
+		Message   any    `json:"MESSAGE"`
+		Unit      string `json:"_SYSTEMD_UNIT"`
+		Timestamp string `json:"__REALTIME_TIMESTAMP"`
+	}
+	if err := json.Unmarshal(line, &raw); err != nil {
+		return LogLine{}, false
+	}
+	msg := ""
+	switch v := raw.Message.(type) {
+	case string:
+		msg = clipLogMessage(v)
+	case []any: // journald encodes binary messages as byte arrays
+		var b []byte
+		for _, x := range v {
+			if f, ok := x.(float64); ok {
+				if len(b) >= maxLogMessageBytes {
+					break
+				}
+				b = append(b, byte(f))
+			}
+		}
+		msg = clipLogMessage(string(b))
+	}
+	ts := ""
+	if us, err := strconv.ParseInt(raw.Timestamp, 10, 64); err == nil {
+		ts = time.UnixMicro(us).UTC().Format(time.RFC3339)
+	}
+	return LogLine{
+		Time:    ts,
+		Service: normalizeJournalService(raw.Unit),
+		Message: msg,
+	}, true
+}
+
+func readJournalLine(r *bufio.Reader, limit int) ([]byte, error) {
+	var out []byte
+	for {
+		part, err := r.ReadSlice('\n')
+		if len(out) < limit {
+			keep := len(part)
+			if len(out)+keep > limit {
+				keep = limit - len(out)
+			}
+			out = append(out, part[:keep]...)
+		}
+		if err == bufio.ErrBufferFull {
 			continue
 		}
-		msg := ""
-		switch v := raw.Message.(type) {
-		case string:
-			msg = v
-		case []any: // journald encodes binary messages as byte arrays
-			var b []byte
-			for _, x := range v {
-				if f, ok := x.(float64); ok {
-					b = append(b, byte(f))
-				}
-			}
-			msg = string(b)
+		if err != nil {
+			return out, err
 		}
-		ts := ""
-		if us, err := strconv.ParseInt(raw.Timestamp, 10, 64); err == nil {
-			ts = time.UnixMicro(us).UTC().Format(time.RFC3339)
-		}
-		lines = append(lines, LogLine{
-			Time:    ts,
-			Service: strings.TrimSuffix(raw.Unit, ".service"),
-			Message: msg,
-		})
+		return out, nil
 	}
-	return lines, sc.Err()
+}
+
+func normalizeJournalService(unit string) string {
+	name := strings.TrimSuffix(unit, ".service")
+	switch {
+	case strings.HasPrefix(name, "postfix@") || name == "postfix":
+		return "postfix"
+	case strings.HasPrefix(name, "dovecot") || name == "dovecot":
+		return "dovecot"
+	case strings.HasPrefix(name, "wispboxd") || name == "wispboxd":
+		return "wispboxd"
+	case strings.HasPrefix(name, "opendkim") || name == "opendkim":
+		return "opendkim"
+	default:
+		return name
+	}
+}
+
+func clipLogMessage(s string) string {
+	if len(s) <= maxLogMessageBytes {
+		return s
+	}
+	return s[:maxLogMessageBytes] + "..."
 }
 
 // ---- mock ----

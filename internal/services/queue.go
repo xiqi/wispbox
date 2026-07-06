@@ -34,6 +34,11 @@ type QueueInspector interface {
 	DeleteMessage(ctx context.Context, queueID string) error // remove one message
 }
 
+// LimitedQueueInspector supports cheaper summary views.
+type LimitedQueueInspector interface {
+	ListLimit(ctx context.Context, keep int) ([]QueueItem, error)
+}
+
 // ---- postfix (production) ----
 
 // PostfixQueue shells out to postqueue/postsuper.
@@ -44,7 +49,14 @@ func NewPostfixQueue() *PostfixQueue { return &PostfixQueue{} }
 const maxQueueListItems = 200
 
 func (q *PostfixQueue) List(ctx context.Context) ([]QueueItem, error) {
-	scan, err := q.scan(ctx, maxQueueListItems)
+	return q.ListLimit(ctx, maxQueueListItems)
+}
+
+func (q *PostfixQueue) ListLimit(ctx context.Context, keep int) ([]QueueItem, error) {
+	if keep <= 0 || keep > maxQueueListItems {
+		keep = maxQueueListItems
+	}
+	scan, err := q.scan(ctx, keep)
 	return scan.Items, err
 }
 
@@ -194,9 +206,19 @@ func (q *MockQueue) List(_ context.Context) ([]QueueItem, error) {
 	return append([]QueueItem(nil), q.Items...), nil
 }
 
+func (q *MockQueue) ListLimit(_ context.Context, keep int) ([]QueueItem, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if keep <= 0 || keep > len(q.Items) {
+		keep = len(q.Items)
+	}
+	return append([]QueueItem(nil), q.Items[:keep]...), nil
+}
+
 func (q *MockQueue) Count(ctx context.Context) (int, error) {
-	items, _ := q.List(ctx)
-	return len(items), nil
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return len(q.Items), nil
 }
 
 func (q *MockQueue) Flush(_ context.Context) error {

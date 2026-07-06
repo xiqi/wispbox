@@ -18,9 +18,9 @@ var dangerousExtensions = map[string]bool{
 }
 
 const (
-	MaxAttachmentSize      = 25 << 20 // per attachment
-	MaxOutgoingMessageSize = 40 << 20 // whole webmail submission / generated MIME
-	MaxIncomingMessageSize = 40 << 20 // whole message opened by webmail
+	MaxAttachmentSize      = 10 << 20 // per attachment
+	MaxOutgoingMessageSize = 16 << 20 // whole webmail submission / generated MIME
+	MaxIncomingMessageSize = 16 << 20 // whole message opened by webmail
 	MaxInlinePartSize      = 1 << 20  // decoded text/inline preview part
 
 	MaxAttachmentSizeMB      = MaxAttachmentSize / (1 << 20)

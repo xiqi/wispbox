@@ -71,7 +71,7 @@ func (h *Handlers) changePassword(w http.ResponseWriter, r *http.Request, mc *ma
 }
 
 func (h *Handlers) totpSetup(w http.ResponseWriter, r *http.Request, mc *mailCtx) {
-	secret, uri, err := auth.GenerateTOTPSecret(branding.Current(r.Context(), h.Store).Name, mc.Mailbox.Email)
+	secret, uri, err := auth.GenerateTOTPSecret(branding.CurrentForHost(r.Context(), h.Store, r.Host).Name, mc.Mailbox.Email)
 	if err != nil {
 		httpjson.Fail(w, err)
 		return
@@ -159,7 +159,7 @@ func (h *Handlers) passkeyRegisterOptions(w http.ResponseWriter, r *http.Request
 		httpjson.Fail(w, err)
 		return
 	}
-	wa, rpID, err := auth.WebAuthnForRequest(r, branding.Current(r.Context(), h.Store).Name)
+	wa, rpID, err := auth.WebAuthnForRequest(r, branding.CurrentForHost(r.Context(), h.Store, r.Host).Name)
 	if err != nil {
 		httpjson.Fail(w, err)
 		return
@@ -203,7 +203,7 @@ func (h *Handlers) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request,
 		httpjson.Fail(w, err)
 		return
 	}
-	wa, rpID, err := auth.WebAuthnForRequest(r, branding.Current(r.Context(), h.Store).Name)
+	wa, rpID, err := auth.WebAuthnForRequest(r, branding.CurrentForHost(r.Context(), h.Store, r.Host).Name)
 	if err != nil {
 		httpjson.Fail(w, err)
 		return
@@ -252,7 +252,7 @@ func (h *Handlers) passkeyDelete(w http.ResponseWriter, r *http.Request, mc *mai
 }
 
 func (h *Handlers) passkeyLoginOptions(w http.ResponseWriter, r *http.Request) {
-	wa, _, err := auth.WebAuthnForRequest(r, branding.Current(r.Context(), h.Store).Name)
+	wa, _, err := auth.WebAuthnForRequest(r, branding.CurrentForHost(r.Context(), h.Store, r.Host).Name)
 	if err != nil {
 		httpjson.Fail(w, err)
 		return
@@ -283,7 +283,7 @@ func (h *Handlers) passkeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 		httpjson.Fail(w, err)
 		return
 	}
-	wa, rpID, err := auth.WebAuthnForRequest(r, branding.Current(r.Context(), h.Store).Name)
+	wa, rpID, err := auth.WebAuthnForRequest(r, branding.CurrentForHost(r.Context(), h.Store, r.Host).Name)
 	if err != nil {
 		httpjson.Fail(w, err)
 		return
