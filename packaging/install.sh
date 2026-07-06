@@ -21,13 +21,16 @@ set -eu
 
 # ----------------------------------------------------------------------
 # Release configuration. Downloads come from GitHub Releases: assets are
-# published at $WISPBOX_DOWNLOAD_BASE/v$WISPBOX_VERSION/<asset> by the
-# release workflow (.github/workflows/release.yml).
+# published at $WISPBOX_DOWNLOAD_BASE/$WISPBOX_TAG/<asset> by the release
+# workflow (.github/workflows/release.yml).
 # When run from a source checkout containing ./wispboxd and ./wispboxctl,
 # the local binaries are installed instead of downloading.
-WISPBOX_VERSION="${WISPBOX_VERSION:-0.1.0}"
-WISPBOX_DOWNLOAD_BASE="${WISPBOX_DOWNLOAD_BASE:-https://github.com/xiqi/wispbox/releases/download}"
+WISPBOX_REPO="${WISPBOX_REPO:-xiqi/wispbox}"
+WISPBOX_VERSION="${WISPBOX_VERSION:-}"
+WISPBOX_TAG=""
+WISPBOX_DOWNLOAD_BASE="${WISPBOX_DOWNLOAD_BASE:-https://github.com/$WISPBOX_REPO/releases/download}"
 WISPBOX_SKIP_VERIFY="${WISPBOX_SKIP_VERIFY:-0}"
+INSTALLABLE_RELEASE_HINT="Please try again later, or set WISPBOX_VERSION to another available version."
 # ----------------------------------------------------------------------
 
 BIN_DIR=/usr/local/bin
@@ -44,6 +47,34 @@ SUMS_READY=0
 say()  { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+release_assets_needed() {
+    arch=$(dpkg --print-architecture)
+    [ -x ./wispboxd ] || printf '%s\n' "wispboxd_linux_$arch"
+    [ -x ./wispboxctl ] || printf '%s\n' "wispboxctl_linux_$arch"
+    [ -f ./packaging/upgrade.sh ] || printf '%s\n' "wispbox-upgrade.sh"
+    [ -f ./packaging/systemd/wispboxd.service ] || printf '%s\n' "wispboxd.service"
+    [ -f ./packaging/systemd/wispbox-upgrade.service ] || printf '%s\n' "wispbox-upgrade.service"
+}
+
+resolve_release() {
+    [ -n "$WISPBOX_TAG" ] && return 0
+
+    if [ -n "$WISPBOX_VERSION" ]; then
+        case "$WISPBOX_VERSION" in
+            v*) WISPBOX_TAG="$WISPBOX_VERSION"; WISPBOX_VERSION="${WISPBOX_VERSION#v}" ;;
+            *) WISPBOX_TAG="v$WISPBOX_VERSION" ;;
+        esac
+        return 0
+    fi
+
+    say "resolving latest release"
+    latest_json=$(curl -fsSL -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$WISPBOX_REPO/releases/latest") \
+        || die "could not find an installable wispbox release for $WISPBOX_REPO. $INSTALLABLE_RELEASE_HINT"
+    WISPBOX_TAG=$(printf '%s' "$latest_json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+    [ -n "$WISPBOX_TAG" ] || die "could not read the latest wispbox version for $WISPBOX_REPO. $INSTALLABLE_RELEASE_HINT"
+    WISPBOX_VERSION="${WISPBOX_TAG#v}"
+}
 
 preflight() {
     [ "$(id -u)" = 0 ] || die "run as root: sudo sh install.sh"
@@ -107,24 +138,43 @@ EOF
 # verified download.
 ensure_sums() {
     [ "$SUMS_READY" = 1 ] && return 0
+    resolve_release
     if [ "$WISPBOX_SKIP_VERIFY" = 1 ]; then
         warn "WISPBOX_SKIP_VERIFY=1 — downloads will NOT be checksum-verified"
         SUMS_READY=1
         return 0
     fi
-    url="$WISPBOX_DOWNLOAD_BASE/v$WISPBOX_VERSION/SHA256SUMS"
-    say "fetching release checksums"
+    url="$WISPBOX_DOWNLOAD_BASE/$WISPBOX_TAG/SHA256SUMS"
+    say "fetching release checksums ($WISPBOX_TAG)"
     curl -fsSL -o "$WORK/SHA256SUMS" "$url" \
-        || die "could not fetch $url — releases include SHA256SUMS; set WISPBOX_SKIP_VERIFY=1 to bypass (not recommended)"
+        || die "wispbox $WISPBOX_TAG is not installable because its checksum file is missing. $INSTALLABLE_RELEASE_HINT"
     SUMS_READY=1
+}
+
+validate_release_assets() {
+    needed=$(release_assets_needed)
+    [ -n "$needed" ] || return 0
+
+    resolve_release
+    ensure_sums
+    for asset in $needed; do
+        if [ "$WISPBOX_SKIP_VERIFY" != 1 ]; then
+            grep "  $asset\$" "$WORK/SHA256SUMS" >/dev/null 2>&1 \
+                || die "wispbox $WISPBOX_TAG is not installable because $asset is missing from the checksum file. $INSTALLABLE_RELEASE_HINT"
+        else
+            url="$WISPBOX_DOWNLOAD_BASE/$WISPBOX_TAG/$asset"
+            curl -fsIL -o /dev/null "$url" \
+                || die "wispbox $WISPBOX_TAG is not installable because $asset is missing. $INSTALLABLE_RELEASE_HINT"
+        fi
+    done
 }
 
 # fetch downloads one release asset into $WORK and verifies its checksum.
 fetch() {
     asset=$1
     ensure_sums
-    url="$WISPBOX_DOWNLOAD_BASE/v$WISPBOX_VERSION/$asset"
-    say "downloading $asset ($WISPBOX_VERSION)"
+    url="$WISPBOX_DOWNLOAD_BASE/$WISPBOX_TAG/$asset"
+    say "downloading $asset ($WISPBOX_TAG)"
     curl -fsSL -o "$WORK/$asset" "$url" || die "download failed: $url"
     if [ "$WISPBOX_SKIP_VERIFY" != 1 ]; then
         ( cd "$WORK" && grep "  $asset\$" SHA256SUMS | sha256sum -c - >/dev/null 2>&1 ) \
@@ -291,6 +341,7 @@ main() {
     trap 'rm -rf "$WORK"' EXIT
 
     preflight
+    validate_release_assets
     install_packages
     setup_user_and_dirs
     install_binaries
