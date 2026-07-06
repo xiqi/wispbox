@@ -23,6 +23,14 @@ function csrf(): string {
   return sessionStorage.getItem(CSRF_KEY) ?? "";
 }
 
+async function request(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch {
+    throw new ApiError(0, "Could not reach wispboxd. Check the server connection and try again.");
+  }
+}
+
 async function parse(res: Response) {
   const text = await res.text();
   let body: any = null;
@@ -39,7 +47,7 @@ async function parse(res: Response) {
 }
 
 export async function get<T = any>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: "same-origin" });
+  const res = await request(url, { credentials: "same-origin" });
   return parse(res);
 }
 
@@ -48,7 +56,7 @@ export async function send<T = any>(
   url: string,
   body?: unknown,
 ): Promise<T> {
-  const res = await fetch(url, {
+  const res = await request(url, {
     method,
     credentials: "same-origin",
     headers: {
@@ -66,7 +74,7 @@ export const del = <T = any>(url: string) => send<T>("DELETE", url);
 
 // Multipart POST (webmail compose with attachments).
 export async function postForm<T = any>(url: string, form: FormData): Promise<T> {
-  const res = await fetch(url, {
+  const res = await request(url, {
     method: "POST",
     credentials: "same-origin",
     headers: { "X-wispbox-CSRF": csrf() },

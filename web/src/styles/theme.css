@@ -154,6 +154,13 @@ pre,
   border-radius: 6px;
 }
 
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[contenteditable="true"]:focus-visible {
+  outline: none;
+}
+
 /* ------------------------------------------------------------------ *
  * Atmosphere: the wisp glow + grain used on login and setup screens.
  * ------------------------------------------------------------------ */

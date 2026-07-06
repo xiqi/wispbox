@@ -111,6 +111,28 @@ func TestRenderMainCF(t *testing.T) {
 	}
 }
 
+func TestRenderMasterCFRequiredZeroProcessLimits(t *testing.T) {
+	builder := newTestEnv(t).builder
+	data, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	files, err := configgen.RenderPostfix(data)
+	if err != nil {
+		t.Fatalf("RenderPostfix: %v", err)
+	}
+	master := string(files["master.cf"])
+
+	for _, want := range []string{
+		"cleanup   unix  n       -       y       -       0       cleanup",
+		"flush     unix  n       -       y       1000?   0       flush",
+	} {
+		if !strings.Contains(master, want) {
+			t.Errorf("master.cf: missing %q; got:\n%s", want, master)
+		}
+	}
+}
+
 func TestRenderLeavesNoTemplateArtifacts(t *testing.T) {
 	builder := newTestEnv(t).builder
 	data, err := builder.Build(context.Background())

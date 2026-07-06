@@ -259,11 +259,11 @@ function ComposeInput({
 }: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
   return (
     <label
-      className={`flex h-9 w-full items-center rounded-lg border border-line bg-inset px-3 text-[13.5px] transition-shadow focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/25 ${className}`}
+      className={`flex h-9 w-full items-center rounded-lg border border-line bg-inset px-3 text-[13.5px] transition-[background-color,border-color,box-shadow] focus-within:border-line-strong focus-within:bg-overlay focus-within:shadow-[0_0_0_2px_var(--accent-dim)] ${className}`}
     >
       <span className="w-14 shrink-0 text-[12px] font-medium text-faint">{label}</span>
       <input
-        className="min-w-0 flex-1 bg-transparent text-ink placeholder:text-faint focus:outline-none"
+        className="min-w-0 flex-1 bg-transparent text-ink placeholder:text-faint focus:outline-none focus-visible:outline-none"
         {...props}
       />
     </label>

@@ -18,7 +18,7 @@ submission inet n       -       y       -       4       smtpd
   -o cleanup_service_name=cleanup
 
 pickup    unix  n       -       y       60      1       pickup
-cleanup   unix  n       -       y       -       2       cleanup
+cleanup   unix  n       -       y       -       0       cleanup
 qmgr      unix  n       -       n       300     1       qmgr
 tlsmgr    unix  -       -       y       1000?   1       tlsmgr
 rewrite   unix  -       -       y       -       2       trivial-rewrite
@@ -26,7 +26,7 @@ bounce    unix  -       -       y       -       2       bounce
 defer     unix  -       -       y       -       2       bounce
 trace     unix  -       -       y       -       1       bounce
 verify    unix  -       -       y       -       1       verify
-flush     unix  n       -       y       1000?   1       flush
+flush     unix  n       -       y       1000?   0       flush
 proxymap  unix  -       -       n       -       2       proxymap
 proxywrite unix -       -       n       -       1       proxymap
 smtp      unix  -       -       y       -       4       smtp

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -38,10 +39,11 @@ type Submission struct {
 	Addr string // 127.0.0.1:587
 	// HeloName is used for EHLO; the primary mail hostname.
 	HeloName string
+	Timeout  time.Duration
 }
 
 func NewSubmission(addr, heloName string) *Submission {
-	return &Submission{Addr: addr, HeloName: heloName}
+	return &Submission{Addr: addr, HeloName: heloName, Timeout: 45 * time.Second}
 }
 
 func (s *Submission) Send(ctx context.Context, creds auth.Credentials, from string, to []string, raw []byte) error {
@@ -49,11 +51,18 @@ func (s *Submission) Send(ctx context.Context, creds auth.Credentials, from stri
 }
 
 func (s *Submission) SendReader(ctx context.Context, creds auth.Credentials, from string, to []string, raw io.Reader) error {
-	d := net.Dialer{Timeout: 15 * time.Second}
+	timeout := s.Timeout
+	if timeout <= 0 {
+		timeout = 45 * time.Second
+	}
+	d := net.Dialer{Timeout: minDuration(timeout, 15*time.Second)}
 	conn, err := d.DialContext(ctx, "tcp", s.Addr)
 	if err != nil {
 		return fmt.Errorf("connect to mail submission service: %w", err)
 	}
+	// Bound the whole SMTP exchange so a stuck local Postfix submission
+	// service returns a JSON error before the HTTP request times out.
+	_ = conn.SetDeadline(time.Now().Add(timeout))
 	host, _, _ := net.SplitHostPort(s.Addr)
 	c, err := smtp.NewClient(conn, host)
 	if err != nil {
@@ -64,7 +73,7 @@ func (s *Submission) SendReader(ctx context.Context, creds auth.Credentials, fro
 
 	if s.HeloName != "" {
 		if err := c.Hello(s.HeloName); err != nil {
-			return fmt.Errorf("submission EHLO: %w", err)
+			return humanSubmissionError("submission EHLO", err)
 		}
 	}
 	// Postfix requires TLS before AUTH on 587. The connection never leaves
@@ -72,11 +81,14 @@ func (s *Submission) SendReader(ctx context.Context, creds auth.Credentials, fro
 	// so certificate verification is intentionally skipped here.
 	if ok, _ := c.Extension("STARTTLS"); ok {
 		if err := c.StartTLS(&tls.Config{ServerName: host, InsecureSkipVerify: true}); err != nil {
-			return fmt.Errorf("submission STARTTLS: %w", err)
+			return humanSubmissionError("submission STARTTLS", err)
 		}
 	}
 	authn := smtp.PlainAuth("", creds.Email, creds.Password, host)
 	if err := c.Auth(authn); err != nil {
+		if isTimeout(err) {
+			return humanSubmissionError("submission AUTH", err)
+		}
 		return fmt.Errorf("the mail server rejected your credentials; please sign in again")
 	}
 	if err := c.Mail(from); err != nil {
@@ -92,20 +104,45 @@ func (s *Submission) SendReader(ctx context.Context, creds auth.Credentials, fro
 		return humanSMTPError(err)
 	}
 	if _, err := io.Copy(w, raw); err != nil {
-		return err
+		return humanSubmissionError("send message body", err)
 	}
 	if err := w.Close(); err != nil {
 		return humanSMTPError(err)
 	}
-	return c.Quit()
+	if err := c.Quit(); err != nil {
+		return humanSubmissionError("submission QUIT", err)
+	}
+	return nil
 }
 
 func humanSMTPError(err error) error {
+	if isTimeout(err) {
+		return humanSubmissionError("mail submission", err)
+	}
 	s := err.Error()
 	if strings.Contains(s, "Sender address rejected: not owned by user") {
 		return fmt.Errorf("you can only send from your own address or an alias that forwards to you")
 	}
 	return fmt.Errorf("the mail server refused the message: %s", s)
+}
+
+func humanSubmissionError(op string, err error) error {
+	if isTimeout(err) {
+		return fmt.Errorf("%s timed out; check Postfix and relay connectivity", op)
+	}
+	return fmt.Errorf("%s: %w", op, err)
+}
+
+func isTimeout(err error) bool {
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+func minDuration(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // ---- mock (development and tests) ----

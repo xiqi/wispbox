@@ -378,7 +378,7 @@ function ReverseDnsGuide({ hostname, ipv4 }: { hostname: string; ipv4: string })
     <InfoNote>
       <div className="font-medium text-ink">Reverse DNS (PTR)</div>
       <ol className="mt-2 list-decimal space-y-1.5 pl-4">
-        <li>Open your VPS provider's IP or networking panel.</li>
+        <li>Open your hosting provider's IP or networking panel.</li>
         <li>
           Find <span className="text-ink">Reverse DNS</span>, <span className="text-ink">rDNS</span>, or{" "}
           <span className="text-ink">PTR</span> for <Identifier>{ptrIP}</Identifier>.
@@ -564,7 +564,7 @@ function StepDeliveryForm({
         </div>
         {mode === "direct" && !outbound25Blocked && (
           <InfoNote>
-            Direct sending needs reverse DNS (PTR) to point your server IP back to the mail hostname. If your VPS
+            Direct sending needs reverse DNS (PTR) to point your server IP back to the mail hostname. If your hosting
             provider cannot set it, choose relay.
           </InfoNote>
         )}
