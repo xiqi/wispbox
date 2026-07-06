@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -31,7 +32,8 @@ type Status struct {
 	StartedAt       string   `json:"started_at,omitempty"`
 	FinishedAt      string   `json:"finished_at,omitempty"`
 	Message         string   `json:"message,omitempty"`
-	LogTail         []string `json:"log_tail,omitempty"`
+	Error           string   `json:"error,omitempty"`
+	LogTail         []string `json:"-"`
 }
 
 // Read returns a best-effort status. Missing files mean no upgrade has run.
@@ -44,6 +46,15 @@ func Read(ctx context.Context, dataDir, logDir string, tailLines int) Status {
 		}
 	}
 	st.LogTail = Tail(filepath.Join(logDir, LogFile), tailLines)
+	if st.State == "failed" && strings.TrimSpace(st.Error) == "" {
+		st.Error = FailureSummary(st.LogTail)
+		if st.Error == "" {
+			st.Error = strings.TrimSpace(st.Message)
+		}
+		if st.Error == "" {
+			st.Error = "Upgrade failed."
+		}
+	}
 	select {
 	case <-ctx.Done():
 		return st
@@ -77,6 +88,41 @@ func Tail(path string, n int) []string {
 		return []string{}
 	}
 	return lines
+}
+
+var ansiEscapeRe = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
+
+// CleanLogLine removes terminal control codes from one installer log line.
+func CleanLogLine(line string) string {
+	line = ansiEscapeRe.ReplaceAllString(line, "")
+	line = strings.ReplaceAll(line, "\r", "")
+	return strings.TrimSpace(line)
+}
+
+// FailureSummary returns one human-readable error line from installer output.
+func FailureSummary(lines []string) string {
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := CleanLogLine(lines[i])
+		if line == "" {
+			continue
+		}
+		lower := strings.ToLower(line)
+		for _, needle := range []string{
+			"error:",
+			"failed",
+			"failure",
+			"could not",
+			"permission denied",
+			"not found",
+			"no such file",
+			"exited",
+		} {
+			if strings.Contains(lower, needle) {
+				return line
+			}
+		}
+	}
+	return ""
 }
 
 func LatestReleaseVersion(ctx context.Context, repo string) (string, error) {

@@ -1,4 +1,4 @@
-import { Loader2, Play, RefreshCw, Trash2, Zap } from "lucide-react";
+import { Loader2, Play, Trash2, Zap } from "lucide-react";
 import { useState } from "react";
 import { del, get, post } from "../../../lib/api";
 import { useLoad } from "../../../lib/hooks";
@@ -12,6 +12,7 @@ import {
   ErrorNote,
   IconButton,
   Identifier,
+  RefreshButton,
   Spinner,
   StatusPill,
   Table,
@@ -74,9 +75,7 @@ export default function Queue() {
     <div className="space-y-4">
       <div className="flex justify-end">
         <div className="flex gap-2">
-          <Button size="sm" onClick={() => refreshQueue()} busy={refreshing} disabled={busy || flushing}>
-            {!refreshing && <RefreshCw size={13} />} Refresh
-          </Button>
+          <RefreshButton size="sm" onClick={() => refreshQueue()} busy={refreshing} disabled={busy || flushing} />
           <Button
             size="sm"
             variant="primary"

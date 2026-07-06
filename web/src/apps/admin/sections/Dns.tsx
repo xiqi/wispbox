@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { RefreshCw } from "lucide-react";
 import { get, post } from "../../../lib/api";
 import { dnsStatusLabel } from "../../../lib/format";
 import { useLoad } from "../../../lib/hooks";
@@ -10,6 +9,7 @@ import {
   CopyButton,
   EmptyState,
   ErrorNote,
+  RefreshButton,
   Select,
   Spinner,
   StatusPill,
@@ -62,9 +62,9 @@ export default function Dns() {
             ))}
           </Select>
         </div>
-        <Button variant="primary" size="sm" onClick={checkNow} busy={checking}>
-          <RefreshCw size={13} /> Check again
-        </Button>
+        <RefreshButton variant="primary" size="sm" onClick={checkNow} busy={checking}>
+          Check again
+        </RefreshButton>
       </div>
 
       {records.error && <ErrorNote>{records.error}</ErrorNote>}

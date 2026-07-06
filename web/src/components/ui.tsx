@@ -8,7 +8,7 @@ import {
   useEffect,
   useState,
 } from "react";
-import { Check, Copy, Loader2, Moon, Sun, X } from "lucide-react";
+import { Check, ChevronDown, Copy, Loader2, Moon, RefreshCw, Sun, X } from "lucide-react";
 import { useBrand } from "../lib/brand";
 import { currentTheme, toggleTheme, type Theme } from "../lib/theme";
 
@@ -90,6 +90,15 @@ export function Button({
       {busy && <Loader2 size={14} className="animate-spin" />}
       {children}
     </button>
+  );
+}
+
+export function RefreshButton({ busy, children = "Refresh", disabled, ...rest }: ButtonProps) {
+  return (
+    <Button disabled={disabled || busy} aria-busy={busy || undefined} {...rest}>
+      {busy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={13} />}
+      {children}
+    </Button>
   );
 }
 
@@ -183,12 +192,19 @@ export function TextArea({ className = "", ...rest }: TextareaHTMLAttributes<HTM
 
 export function Select({ className = "", children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select
-      className={`h-9 w-full appearance-none rounded-lg border border-line bg-inset px-3 text-[13.5px] leading-none text-ink focus:border-accent/50 focus:outline-none focus:ring-2 focus:ring-accent/25 ${className}`}
-      {...rest}
-    >
-      {children}
-    </select>
+    <span className="relative block w-full">
+      <select
+        className={`h-9 w-full appearance-none rounded-lg border border-line bg-inset px-3 pr-9 text-[13.5px] leading-none text-ink focus:border-accent/50 focus:outline-none focus:ring-2 focus:ring-accent/25 ${className}`}
+        {...rest}
+      >
+        {children}
+      </select>
+      <ChevronDown
+        size={15}
+        aria-hidden
+        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-faint"
+      />
+    </span>
   );
 }
 

@@ -2,8 +2,10 @@ package updater
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -37,6 +39,34 @@ func TestReadStatusAndTail(t *testing.T) {
 	}
 	if got := st.LogTail; len(got) != 2 || got[0] != "two" || got[1] != "three" {
 		t.Fatalf("LogTail = %v, want [two three]", got)
+	}
+	raw, err := json.Marshal(st)
+	if err != nil {
+		t.Fatalf("Marshal status: %v", err)
+	}
+	if strings.Contains(string(raw), "log_tail") || strings.Contains(string(raw), "three") {
+		t.Fatalf("marshaled status leaks log tail: %s", raw)
+	}
+}
+
+func TestReadFailedStatusDerivesErrorSummary(t *testing.T) {
+	dataDir := t.TempDir()
+	logDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, StatusFile), []byte(`{
+		"state":"failed",
+		"target_version":"1.2.3",
+		"message":"Upgrade failed. See the log for details."
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	log := "==> installing\n\x1b[1;31merror:\x1b[0m could not install packages\n"
+	if err := os.WriteFile(filepath.Join(logDir, LogFile), []byte(log), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	st := Read(context.Background(), dataDir, logDir, 20)
+	if st.Error != "error: could not install packages" {
+		t.Fatalf("Error = %q, want cleaned log error", st.Error)
 	}
 }
 

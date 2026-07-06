@@ -203,7 +203,7 @@ export interface UpgradeStatus {
   started_at?: string;
   finished_at?: string;
   message?: string;
-  log_tail?: string[];
+  error?: string;
 }
 
 export interface SetupStatus {

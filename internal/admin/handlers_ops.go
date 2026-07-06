@@ -439,6 +439,7 @@ func (h *Handlers) audit(w http.ResponseWriter, r *http.Request, _ *adminCtx) {
 // settableKeys are the settings PATCHable through the API.
 var settableKeys = map[string]bool{
 	"acme_email":         true,
+	"primary_hostname":   true,
 	"server_ipv4":        true,
 	"server_ipv6":        true,
 	branding.SettingName: true,
@@ -468,7 +469,7 @@ func (h *Handlers) patchSettings(w http.ResponseWriter, r *http.Request, ac *adm
 			httpjson.Error(w, http.StatusBadRequest, err)
 			return
 		}
-		v = strings.TrimSpace(v)
+		v = cleanSettingValue(key, v)
 		if err := validateSetting(key, v); err != nil {
 			httpjson.Error(w, http.StatusBadRequest, err)
 			return
@@ -527,14 +528,27 @@ func (h *Handlers) brandLogoSettingKey(r *http.Request) (string, error) {
 	return branding.DomainSettingLogo(domain), nil
 }
 
+func cleanSettingValue(key, value string) string {
+	value = strings.TrimSpace(value)
+	if key == "primary_hostname" {
+		return strings.ToLower(value)
+	}
+	return value
+}
+
 // validateSetting enforces value shape for the admin-settable keys.
 func validateSetting(key, value string) error {
 	if value == "" {
+		if key == "primary_hostname" {
+			return fmt.Errorf("primary hostname is required")
+		}
 		return nil // clearing a value is allowed
 	}
 	switch key {
 	case "acme_email":
 		return db.ValidateEmail(value)
+	case "primary_hostname":
+		return db.ValidateHostname(value)
 	case "server_ipv4":
 		return db.ValidateIPv4(value)
 	case "server_ipv6":

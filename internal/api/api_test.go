@@ -385,6 +385,31 @@ func TestDomainAppearanceOverridesBrandByHost(t *testing.T) {
 	}
 }
 
+func TestSettingsCanUpdatePrimaryHostname(t *testing.T) {
+	_, srv := newTestServer(t, true)
+	c := newClient(t, srv)
+	c.loginAdmin(seedAdminUsername, seedAdminPassword)
+
+	status, body := c.patch("/api/admin/settings", map[string]any{
+		"primary_hostname": "Admin.Example.COM",
+	})
+	if status != http.StatusOK {
+		t.Fatalf("patch primary_hostname: status = %d, want 200 (body %v)", status, body)
+	}
+	settings := obj(t, body, "settings")
+	if got := str(t, settings, "primary_hostname"); got != "admin.example.com" {
+		t.Fatalf("primary_hostname = %q, want admin.example.com", got)
+	}
+
+	status, body = c.patch("/api/admin/settings", map[string]any{"primary_hostname": ""})
+	if status != http.StatusBadRequest {
+		t.Fatalf("clear primary_hostname: status = %d, want 400 (body %v)", status, body)
+	}
+	if msg := str(t, body, "error"); !strings.Contains(msg, "primary hostname") {
+		t.Fatalf("clear primary_hostname error = %q, want primary hostname guidance", msg)
+	}
+}
+
 func TestDirectDeliveryRequiresOutbound25(t *testing.T) {
 	app, srv := newTestServer(t, true)
 	app.Cfg.Mode = config.ModeProduction

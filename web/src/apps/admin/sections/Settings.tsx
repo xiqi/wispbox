@@ -1,5 +1,4 @@
 import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw } from "lucide-react";
 import { del, get, patch, post, postForm } from "../../../lib/api";
 import { brandSettingKeys, useBrand } from "../../../lib/brand";
 import { useLoad } from "../../../lib/hooks";
@@ -10,6 +9,7 @@ import {
   ErrorNote,
   Field,
   Input,
+  RefreshButton,
   Select,
   Spinner,
   toast,
@@ -23,6 +23,7 @@ export default function Settings() {
   );
   const domains = useLoad(() => get<{ domains: Domain[] }>("/api/admin/domains"));
   const logoInputRef = useRef<HTMLInputElement | null>(null);
+  const [primaryHostname, setPrimaryHostname] = useState("");
   const [acmeEmail, setAcmeEmail] = useState("");
   const [ipv4, setIpv4] = useState("");
   const [ipv6, setIpv6] = useState("");
@@ -36,6 +37,7 @@ export default function Settings() {
 
   useEffect(() => {
     if (data) {
+      setPrimaryHostname(data.settings.primary_hostname ?? "");
       setAcmeEmail(data.settings.acme_email ?? "");
       setIpv4(data.settings.server_ipv4 ?? "");
       setIpv6(data.settings.server_ipv6 ?? "");
@@ -71,6 +73,7 @@ export default function Settings() {
     setSaving(true);
     try {
       await patch("/api/admin/settings", {
+        primary_hostname: primaryHostname,
         acme_email: acmeEmail,
         server_ipv4: ipv4,
         server_ipv6: ipv6,
@@ -219,8 +222,12 @@ export default function Settings() {
 
       <Card title="Server">
         <form onSubmit={save} className="max-w-lg space-y-4">
-          <Field label="Primary hostname">
-            <Input disabled value={data?.settings.primary_hostname ?? ""} />
+          <Field label="Primary hostname" hint="Used for the admin/webmail HTTPS certificate and generated service configs.">
+            <Input
+              value={primaryHostname}
+              onChange={(e) => setPrimaryHostname(e.target.value)}
+              placeholder="mail.example.com"
+            />
           </Field>
           <Field
             label="Server IPv4"
@@ -295,11 +302,10 @@ function UpdatesCard() {
   const upgradeLabel =
     data?.available === false ? "Unavailable" : updateAvailable ? "Upgrade to latest" : "Up to date";
   const commit = data?.current_commit && data.current_commit !== "unknown" ? ` (${data.current_commit})` : "";
+  const upgradeError = data?.state === "failed" ? data.error || data.message || "Upgrade failed." : "";
+  const upgradeMessage = data?.state === "failed" ? "" : data?.message;
   const refreshAction = (
-    <Button type="button" size="sm" onClick={refreshStatus} busy={refreshBusy}>
-      <RefreshCw size={13} className={refreshBusy ? "animate-spin" : ""} />
-      Refresh
-    </Button>
+    <RefreshButton type="button" size="sm" onClick={refreshStatus} busy={refreshBusy} />
   );
 
   return (
@@ -328,9 +334,11 @@ function UpdatesCard() {
               </div>
             </div>
 
-            {data?.message && (
+            {upgradeError && <ErrorNote>{upgradeError}</ErrorNote>}
+
+            {upgradeMessage && (
               <div className="rounded-lg border border-line bg-inset px-3 py-2.5 text-[12.5px] leading-relaxed text-muted">
-                {data.message}
+                {upgradeMessage}
               </div>
             )}
 
@@ -346,11 +354,6 @@ function UpdatesCard() {
               </Button>
             </div>
 
-            {data?.log_tail && data.log_tail.length > 0 && (
-              <pre className="max-h-56 overflow-auto rounded-lg border border-line bg-bg-deep p-3 font-mono text-[12px] leading-relaxed text-muted">
-                {data.log_tail.join("\n")}
-              </pre>
-            )}
           </>
         )}
       </div>

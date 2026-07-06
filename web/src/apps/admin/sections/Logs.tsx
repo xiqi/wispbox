@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { RefreshCw } from "lucide-react";
 import { get } from "../../../lib/api";
 import { useLoad } from "../../../lib/hooks";
 import type { LogLine } from "../../../lib/types";
-import { Button, EmptyState, ErrorNote, Spinner } from "../../../components/ui";
+import { EmptyState, ErrorNote, RefreshButton, Spinner } from "../../../components/ui";
 
 const tabs = [
   { id: "", label: "All" },
@@ -14,10 +13,19 @@ const tabs = [
 
 export default function Logs() {
   const [service, setService] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
   const { data, error, busy, reload } = useLoad(
     () => get<{ lines: LogLine[] }>(`/api/admin/logs?n=200${service ? `&service=${service}` : ""}`),
     [service],
   );
+  const refreshBusy = refreshing || (busy && Boolean(data));
+
+  function refreshLogs() {
+    if (refreshing) return;
+    setRefreshing(true);
+    reload();
+    window.setTimeout(() => setRefreshing(false), 500);
+  }
 
   return (
     <div className="space-y-4">
@@ -35,9 +43,7 @@ export default function Logs() {
             </button>
           ))}
         </div>
-        <Button size="sm" onClick={reload}>
-          <RefreshCw size={13} /> Refresh
-        </Button>
+        <RefreshButton size="sm" onClick={refreshLogs} busy={refreshBusy} />
       </div>
 
       {error && <ErrorNote>{error}</ErrorNote>}

@@ -6,7 +6,6 @@ import {
   Circle,
   Loader2,
   Mail,
-  RefreshCw,
   TriangleAlert,
   XCircle,
 } from "lucide-react";
@@ -24,6 +23,7 @@ import {
   Identifier,
   InfoNote,
   Input,
+  RefreshButton,
   Select,
   Spinner,
   StatusPill,
@@ -238,9 +238,9 @@ function StepChecks({
         ))}
       </ul>
       <div className="mt-6 flex justify-end gap-2">
-        <Button type="button" onClick={onRetry} busy={checking}>
-          <RefreshCw size={13} /> Retry checks
-        </Button>
+        <RefreshButton type="button" onClick={onRetry} busy={checking}>
+          Retry checks
+        </RefreshButton>
         <Button variant="primary" onClick={onNext} disabled={!allOk}>
           {allOk ? "Begin setup" : "Fix the issues above first"} <ArrowRight size={14} />
         </Button>
@@ -695,9 +695,9 @@ function StepDns({ domain, onNext }: { domain: Domain; onNext: () => void }) {
         ))}
       </div>
       <div className="mt-5 flex items-center justify-between gap-3">
-        <Button onClick={check} busy={checking}>
-          <RefreshCw size={13} /> Check DNS
-        </Button>
+        <RefreshButton onClick={check} busy={checking}>
+          Check DNS
+        </RefreshButton>
         <div className="flex items-center gap-3">
           {!essentialOk && (
             <span className="text-[12px] text-faint">DNS can be fixed later.</span>
